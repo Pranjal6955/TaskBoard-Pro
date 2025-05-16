@@ -1,24 +1,45 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from '../components/ui/Navbar';
 import ProjectHeader from '../components/project/ProjectHeader';
 import KanbanBoard from '../components/project/KanbanBoard';
-import { projects } from '../assets/mockData';
-import { Loader } from 'lucide-react';
+import { getProjectById } from '../services/projectService';
+import { getProjectTasks } from '../services/taskService';
+import { AlertCircle, Loader } from 'lucide-react';
 
 const ProjectPage = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [project, setProject] = useState(null);
+  const [tasks, setTasks] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
   
   useEffect(() => {
-    // Simulate API call to fetch project details
-    setTimeout(() => {
-      const foundProject = projects.find(p => p.id === id);
-      setProject(foundProject);
-      setIsLoading(false);
-    }, 800);
+    const fetchProjectData = async () => {
+      try {
+        setIsLoading(true);
+        const projectData = await getProjectById(id);
+        setProject(projectData);
+        
+        const tasksData = await getProjectTasks(id);
+        setTasks(tasksData);
+        
+        setError(null);
+      } catch (err) {
+        console.error('Error fetching project:', err);
+        if (err.response?.status === 404) {
+          setError('Project not found or you do not have access to it.');
+        } else {
+          setError('Failed to load project data. Please try again later.');
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchProjectData();
   }, [id]);
   
   if (isLoading) {
@@ -34,6 +55,29 @@ const ProjectPage = () => {
             <Loader size={40} className="text-[#1DCD9F] animate-spin mb-4" />
             <p className="text-white/70">Loading project...</p>
           </motion.div>
+        </div>
+      </div>
+    );
+  }
+  
+  if (error) {
+    return (
+      <div className="min-h-screen bg-[#000000] text-white">
+        <Navbar />
+        <div className="container mx-auto px-4 pt-20">
+          <div className="bg-[#222222] border border-[#333333] rounded-lg p-8">
+            <div className="flex items-center gap-3 mb-4 text-red-400">
+              <AlertCircle size={24} />
+              <h2 className="text-xl font-medium">Error</h2>
+            </div>
+            <p className="text-white/70 mb-6">{error}</p>
+            <button 
+              onClick={() => navigate('/dashboard')}
+              className="px-4 py-2 bg-[#1DCD9F] text-black rounded-md hover:bg-[#19B589] transition"
+            >
+              Back to Dashboard
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -61,7 +105,7 @@ const ProjectPage = () => {
         <ProjectHeader project={project} />
         
         <div className="container mx-auto px-4 py-6">
-          <KanbanBoard />
+          <KanbanBoard projectId={id} initialTasks={tasks} />
         </div>
       </main>
     </div>

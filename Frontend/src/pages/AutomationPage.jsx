@@ -1,35 +1,80 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from '../components/ui/Navbar';
 import ProjectHeader from '../components/project/ProjectHeader';
 import RuleCreationForm from '../components/automation/RuleCreationForm';
 import RulePreview from '../components/automation/RulePreview';
-import { projects, automationRules } from '../assets/mockData';
-import { Loader, Zap } from 'lucide-react';
+import { getProjectById } from '../services/projectService';
+import { getProjectAutomations, createAutomation, deleteAutomation } from '../services/automationService';
+import { AlertCircle, Loader, Zap } from 'lucide-react';
 
 const AutomationPage = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [project, setProject] = useState(null);
   const [rules, setRules] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
   
   useEffect(() => {
-    // Simulate API call to fetch project details and automation rules
-    setTimeout(() => {
-      const foundProject = projects.find(p => p.id === id);
-      setProject(foundProject);
-      setRules(automationRules);
-      setIsLoading(false);
-    }, 800);
+    const fetchData = async () => {
+      try {
+        setIsLoading(true);
+        
+        // Fetch project details
+        const projectData = await getProjectById(id);
+        setProject(projectData);
+        
+        // Fetch automation rules
+        const automationData = await getProjectAutomations(id);
+        setRules(automationData);
+        
+        setError(null);
+      } catch (err) {
+        console.error('Error fetching data:', err);
+        if (err.response?.status === 404) {
+          setError('Project not found or you do not have access to it.');
+        } else {
+          setError('Failed to load automation data. Please try again later.');
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchData();
   }, [id]);
   
-  const handleCreateRule = (rule) => {
-    setRules(prev => [rule, ...prev]);
+  const handleCreateRule = async (ruleData) => {
+    try {
+      setIsLoading(true);
+      const newRule = await createAutomation({
+        ...ruleData,
+        projectId: id
+      });
+      setRules(prev => [newRule, ...prev]);
+      setError(null);
+    } catch (err) {
+      console.error('Error creating automation rule:', err);
+      setError('Failed to create automation rule. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
   
-  const handleDeleteRule = (ruleId) => {
-    setRules(prev => prev.filter(rule => rule.id !== ruleId));
+  const handleDeleteRule = async (ruleId) => {
+    try {
+      setIsLoading(true);
+      await deleteAutomation(ruleId);
+      setRules(prev => prev.filter(rule => rule._id !== ruleId));
+      setError(null);
+    } catch (err) {
+      console.error('Error deleting automation rule:', err);
+      setError('Failed to delete automation rule. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
   
   if (isLoading) {
@@ -45,6 +90,29 @@ const AutomationPage = () => {
             <Loader size={40} className="text-[#1DCD9F] animate-spin mb-4" />
             <p className="text-white/70">Loading project automation...</p>
           </motion.div>
+        </div>
+      </div>
+    );
+  }
+  
+  if (error) {
+    return (
+      <div className="min-h-screen bg-[#000000] text-white">
+        <Navbar />
+        <div className="container mx-auto px-4 pt-20">
+          <div className="bg-[#222222] border border-[#333333] rounded-lg p-8">
+            <div className="flex items-center gap-3 mb-4 text-red-400">
+              <AlertCircle size={24} />
+              <h2 className="text-xl font-medium">Error</h2>
+            </div>
+            <p className="text-white/70 mb-6">{error}</p>
+            <button 
+              onClick={() => navigate('/dashboard')}
+              className="px-4 py-2 bg-[#1DCD9F] text-black rounded-md hover:bg-[#19B589] transition"
+            >
+              Back to Dashboard
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -101,7 +169,7 @@ const AutomationPage = () => {
               ) : (
                 rules.map(rule => (
                   <RulePreview 
-                    key={rule.id} 
+                    key={rule._id || rule.id} 
                     rule={rule} 
                     onDeleteRule={handleDeleteRule} 
                   />

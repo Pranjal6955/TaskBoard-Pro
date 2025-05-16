@@ -1,49 +1,80 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Navbar from '../components/ui/Navbar';
 import Button from '../components/ui/Button';
 import ProjectCard from '../components/dashboard/ProjectCard';
 import CreateProjectModal from '../components/dashboard/CreateProjectModal';
-import { projects } from '../assets/mockData';
-import { Plus, Search, Filter, Briefcase } from 'lucide-react';
+import { getProjects, createProject } from '../services/projectService';
+import { Plus, Search, Filter, Briefcase, AlertCircle } from 'lucide-react';
 
 const DashboardPage = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [projectsList, setProjectsList] = useState(projects);
+  const [projectsList, setProjectsList] = useState([]);
+  const [filteredProjects, setFilteredProjects] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
   
-  const handleCreateProject = (project) => {
-    setProjectsList([project, ...projectsList]);
-    setIsCreateModalOpen(false);
+  useEffect(() => {
+    const fetchProjects = async () => {
+      try {
+        setIsLoading(true);
+        const data = await getProjects();
+        setProjectsList(data);
+        setFilteredProjects(data);
+        setError(null);
+      } catch (err) {
+        console.error('Error fetching projects:', err);
+        setError('Failed to load projects. Please try again later.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchProjects();
+  }, []);
+  
+  const handleCreateProject = async (projectData) => {
+    setIsLoading(true);
+    try {
+      const newProject = await createProject(projectData);
+      setProjectsList(prev => [newProject, ...prev]);
+      setFilteredProjects(prev => [newProject, ...prev]);
+      setIsCreateModalOpen(false);
+      setError(null);
+    } catch (err) {
+      console.error('Error creating project:', err);
+      setError('Failed to create project. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
   
   const handleSearch = (e) => {
     e.preventDefault();
     
     if (!searchQuery.trim()) {
-      setProjectsList(projects);
+      setFilteredProjects(projectsList);
       return;
     }
     
     setIsLoading(true);
     
-    // Simulate search API call
     setTimeout(() => {
-      const filtered = projects.filter(
+      const filtered = projectsList.filter(
         project => 
           project.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
           project.description.toLowerCase().includes(searchQuery.toLowerCase())
       );
       
-      setProjectsList(filtered);
+      setFilteredProjects(filtered);
       setIsLoading(false);
-    }, 600);
+    }, 300);
   };
   
   const resetSearch = () => {
     setSearchQuery('');
-    setProjectsList(projects);
+    setFilteredProjects(projectsList);
   };
   
   const containerVariants = {
@@ -116,7 +147,18 @@ const DashboardPage = () => {
           </Button>
         </div>
         
-        {projectsList.length === 0 ? (
+        {error && (
+          <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4 mb-6 flex items-center gap-3">
+            <AlertCircle className="text-red-400" />
+            <p className="text-red-200">{error}</p>
+          </div>
+        )}
+        
+        {isLoading && !error ? (
+          <div className="flex justify-center items-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#1DCD9F]"></div>
+          </div>
+        ) : filteredProjects.length === 0 ? (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -146,9 +188,9 @@ const DashboardPage = () => {
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
           >
             <AnimatePresence>
-              {projectsList.map((project, index) => (
+              {filteredProjects.map((project, index) => (
                 <ProjectCard 
-                  key={project.id}
+                  key={project._id || project.id}
                   {...project}
                   index={index}
                 />

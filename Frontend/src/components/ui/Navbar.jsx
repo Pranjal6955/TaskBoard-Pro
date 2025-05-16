@@ -1,14 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, Activity, CircleUser } from 'lucide-react';
+import { Menu, X, Activity, LogOut } from 'lucide-react';
 import Button from './Button';
-import { user } from '../../assets/mockData';
+import { getCurrentUser } from '../../services/userService';
+import { auth } from '../../firebase/config';
 
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   const location = useLocation();
+  const navigate = useNavigate();
   
   useEffect(() => {
     const handleScroll = () => {
@@ -19,16 +23,62 @@ const Navbar = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
   
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      try {
+        setIsLoading(true);
+        // Check if user is logged in
+        if (auth.currentUser) {
+          const userData = await getCurrentUser();
+          setCurrentUser(userData);
+        }
+      } catch (error) {
+        console.error('Error fetching user profile:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchUserProfile();
+    
+    // Set up auth listener
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (user) {
+        try {
+          const userData = await getCurrentUser();
+          setCurrentUser(userData);
+        } catch (error) {
+          console.error('Error fetching user profile:', error);
+        }
+      } else {
+        setCurrentUser(null);
+      }
+      setIsLoading(false);
+    });
+    
+    return () => unsubscribe();
+  }, []);
+  
   const handleToggleMenu = () => {
     setIsMobileMenuOpen(!isMobileMenuOpen);
   };
   
-  const isLoggedIn = location.pathname !== '/' && location.pathname !== '/login';
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+      navigate('/login');
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
+  
+  const isLoggedIn = !!auth.currentUser;
+  const isAuthPage = location.pathname === '/login' || location.pathname === '/signup';
   
   return (
     <motion.nav
       className={`fixed top-0 left-0 right-0 z-40 transition-colors duration-300 ${
-        isScrolled || isLoggedIn ? 'bg-[#000000]/95 backdrop-blur-sm' : 'bg-transparent'
+        isScrolled || (isLoggedIn && !isAuthPage) ? 'bg-[#000000]/95 backdrop-blur-sm' : 'bg-transparent'
       }`}
       initial={{ y: -100 }}
       animate={{ y: 0 }}
@@ -42,16 +92,29 @@ const Navbar = () => {
           </Link>
           
           <div className="hidden md:flex items-center space-x-8">
-            {isLoggedIn ? (
+            {isLoggedIn && !isAuthPage ? (
               <>
                 <Link to="/dashboard" className="text-white/80 hover:text-white transition">Dashboard</Link>
                 <div className="flex items-center space-x-3">
-                  <img 
-                    src={user.avatar} 
-                    alt={user.name} 
-                    className="w-8 h-8 rounded-full border-2 border-[#1DCD9F]" 
+                  {isLoading ? (
+                    <div className="w-8 h-8 rounded-full bg-[#333333] animate-pulse"></div>
+                  ) : (
+                    <>
+                      <img 
+                        src={currentUser?.photoURL || 'https://i.pravatar.cc/150?img=1'} 
+                        alt={currentUser?.name || 'User'} 
+                        className="w-8 h-8 rounded-full border-2 border-[#1DCD9F]" 
+                      />
+                      <span className="text-white">{currentUser?.name || 'User'}</span>
+                    </>
+                  )}
+                  <Button 
+                    variant="text" 
+                    onClick={handleLogout} 
+                    className="text-white/70 hover:text-white p-1"
+                    aria-label="Log out"
+                    icon={<LogOut size={16} />}
                   />
-                  <span className="text-white">{user.name}</span>
                 </div>
               </>
             ) : (
@@ -88,15 +151,21 @@ const Navbar = () => {
             transition={{ duration: 0.3 }}
           >
             <div className="container mx-auto px-4 py-4 flex flex-col space-y-4">
-              {isLoggedIn ? (
+              {isLoggedIn && !isAuthPage ? (
                 <>
                   <div className="flex items-center space-x-3 px-2 py-3">
-                    <img 
-                      src={user.avatar} 
-                      alt={user.name} 
-                      className="w-8 h-8 rounded-full border-2 border-[#1DCD9F]" 
-                    />
-                    <span className="text-white">{user.name}</span>
+                    {isLoading ? (
+                      <div className="w-8 h-8 rounded-full bg-[#333333] animate-pulse"></div>
+                    ) : (
+                      <>
+                        <img 
+                          src={currentUser?.photoURL || 'https://i.pravatar.cc/150?img=1'} 
+                          alt={currentUser?.name || 'User'}
+                          className="w-8 h-8 rounded-full border-2 border-[#1DCD9F]" 
+                        />
+                        <span className="text-white">{currentUser?.name || 'User'}</span>
+                      </>
+                    )}
                   </div>
                   <Link 
                     to="/dashboard" 
@@ -105,6 +174,16 @@ const Navbar = () => {
                   >
                     Dashboard
                   </Link>
+                  <button
+                    onClick={() => {
+                      handleLogout();
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className="text-white/80 hover:text-white transition px-2 py-3 text-left flex items-center"
+                  >
+                    <LogOut size={16} className="mr-2" />
+                    Log Out
+                  </button>
                 </>
               ) : (
                 <>
@@ -122,13 +201,6 @@ const Navbar = () => {
                   >
                     Features
                   </Link>
-                  {/* <Link 
-                    to="/pricing" 
-                    className="text-white/80 hover:text-white transition px-2 py-3"
-                    onClick={() => setIsMobileMenuOpen(false)}
-                  >
-                    Pricing
-                  </Link> */}
                   <Link 
                     to="/login" 
                     onClick={() => setIsMobileMenuOpen(false)}
