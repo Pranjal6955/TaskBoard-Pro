@@ -1,157 +1,251 @@
-const Automation = require('../models/Automation');
-const Task = require('../models/Task');
-const User = require('../models/User');
-const Notification = require('../models/Notification');
+import Automation from '../models/automationModel.js';
+import Task from '../models/taskModel.js';
+import Project from '../models/projectModel.js';
+import Badge from '../models/badgeModel.js';
+import Notification from '../models/notificationModel.js';
+import User from '../models/userModel.js';
+import { scheduleJob } from 'node-schedule';
 
-// Function to process automations based on a trigger
-exports.processAutomations = async (triggerType, task, user) => {
+// Process the automations for a task
+export const processTaskAutomations = async (task, previousTask = null) => {
   try {
-    // Find all active automations for this project and trigger type
-    const automations = await Automation.find({
+    // Get the project
+    const project = await Project.findById(task.projectId);
+    if (!project) return;
+    
+    // Get active automations for this project
+    const automations = await Automation.find({ 
       projectId: task.projectId,
-      triggerType,
       isActive: true
     });
-
-    if (automations.length === 0) {
-      return;
-    }
-
+    
+    if (!automations || automations.length === 0) return;
+    
     // Process each automation
     for (const automation of automations) {
-      // Check if conditions match
-      if (automation.condition && !await checkCondition(automation.condition, task)) {
-        continue;
+      let shouldExecute = false;
+      
+      // Check if the trigger conditions are met
+      switch (automation.trigger.type) {
+        case 'STATUS_CHANGE':
+          if (previousTask && 
+              previousTask.status === automation.trigger.fromStatus && 
+              task.status === automation.trigger.toStatus) {
+            shouldExecute = true;
+          }
+          break;
+          
+        case 'ASSIGNMENT_CHANGE':
+          if (previousTask &&
+              (!previousTask.assignee || previousTask.assignee.userId !== automation.trigger.assigneeId) &&
+              task.assignee && 
+              (task.assignee.userId === automation.trigger.assigneeId || 
+               task.assignee.email === automation.trigger.assigneeEmail)) {
+            shouldExecute = true;
+          }
+          break;
+          
+        case 'DUE_DATE_PASSED':
+          // This is triggered by a scheduler, not here directly
+          break;
       }
-
-      // Execute the action
-      await executeAction(automation.action, task, user);
+      
+      // If trigger conditions are met, execute the action
+      if (shouldExecute) {
+        await executeAutomationAction(automation, task, project);
+      }
     }
   } catch (error) {
     console.error('Error processing automations:', error);
   }
 };
 
-// Check if the condition is met
-const checkCondition = async (condition, task) => {
-  if (!condition || !condition.field || !condition.operator) {
-    return true; // No condition specified
-  }
-
-  let actualValue;
-
-  // Get the actual value from the task based on field
-  switch (condition.field) {
-    case 'status':
-      actualValue = task.status;
-      break;
-    case 'assignee':
-      actualValue = task.assignee ? task.assignee.toString() : null;
-      break;
-    case 'dueDate':
-      actualValue = task.dueDate;
-      break;
-    default:
-      return false;
-  }
-
-  // Compare based on operator
-  switch (condition.operator) {
-    case 'equals':
-      return actualValue === condition.value;
-    case 'not_equals':
-      return actualValue !== condition.value;
-    case 'contains':
-      return typeof actualValue === 'string' && 
-             actualValue.includes(condition.value);
-    case 'not_contains':
-      return typeof actualValue === 'string' && 
-             !actualValue.includes(condition.value);
-    default:
-      return false;
+// Execute an automation action
+const executeAutomationAction = async (automation, task, project) => {
+  try {
+    switch (automation.action.type) {
+      case 'ASSIGN_BADGE':
+        await assignBadge(task, automation);
+        break;
+        
+      case 'MOVE_TASK':
+        await moveTask(task, automation);
+        break;
+        
+      case 'SEND_NOTIFICATION':
+        await sendNotification(task, project, automation);
+        break;
+    }
+  } catch (error) {
+    console.error('Error executing automation action:', error);
   }
 };
 
-// Execute the action
-const executeAction = async (action, task, user) => {
-  if (!action || !action.type) {
-    return;
-  }
-
-  switch (action.type) {
-    case 'change_status':
-      await Task.findByIdAndUpdate(task._id, { 
-        status: action.value,
-        $push: { 
-          history: {
-            field: 'status',
-            oldValue: task.status,
-            newValue: action.value,
-            changedBy: 'automation'
+// Assign a badge to the task assignee
+const assignBadge = async (task, automation) => {
+  try {
+    if (!task.assignee || !task.assignee.userId) return;
+    
+    // Create the badge
+    const badgeName = automation.action.badgeName || 'Task Completed';
+    
+    const badge = new Badge({
+      userId: task.assignee.userId,
+      name: badgeName,
+      description: `Awarded for completing task: ${task.title}`,
+      projectId: task.projectId,
+      taskId: task._id
+    });
+    
+    await badge.save();
+    
+    // Update user badge counters
+    const badgeType = getBadgeType(badgeName);
+    if (badgeType) {
+      await User.findOneAndUpdate(
+        { uid: task.assignee.userId },
+        { 
+          $inc: {
+            'badges.total': 1,
+            [`badges.types.${badgeType}`]: 1
           }
         }
+      );
+    }
+    
+    // Create a notification for the badge
+    const notification = new Notification({
+      userId: task.assignee.userId,
+      title: 'New Badge Earned!',
+      message: `You earned the "${badge.name}" badge for task: ${task.title}`,
+      type: 'BADGE',
+      relatedProjectId: task.projectId,
+      relatedTaskId: task._id
+    });
+    
+    await notification.save();
+    
+  } catch (error) {
+    console.error('Error assigning badge:', error);
+  }
+};
+
+// Helper function to map badge names to badge types
+const getBadgeType = (badgeName) => {
+  const lowerName = badgeName.toLowerCase();
+  
+  if (lowerName.includes('task master')) return 'taskMaster';
+  if (lowerName.includes('problem solver')) return 'problemSolver';
+  if (lowerName.includes('team player')) return 'teamPlayer';
+  if (lowerName.includes('productivity')) return 'productivityStar';
+  if (lowerName.includes('fast') || lowerName.includes('quick')) return 'fastCompleter';
+  
+  // Default to task master for generic badges
+  return 'taskMaster';
+};
+
+// Move a task to a different status
+const moveTask = async (task, automation) => {
+  try {
+    // Update the task status
+    task.status = automation.action.targetStatus;
+    await task.save();
+    
+    // Create a notification for the task creator
+    const notification = new Notification({
+      userId: task.createdBy,
+      title: 'Task Status Changed',
+      message: `Task "${task.title}" was moved to "${automation.action.targetStatus}" automatically.`,
+      type: 'TASK',
+      relatedProjectId: task.projectId,
+      relatedTaskId: task._id
+    });
+    
+    await notification.save();
+    
+  } catch (error) {
+    console.error('Error moving task:', error);
+  }
+};
+
+// Send a notification
+const sendNotification = async (task, project, automation) => {
+  try {
+    const notificationTargets = [];
+    
+    // Determine who should be notified
+    if (automation.action.notifyAssignee && task.assignee && task.assignee.userId) {
+      notificationTargets.push(task.assignee.userId);
+    }
+    
+    if (automation.action.notifyCreator) {
+      notificationTargets.push(task.createdBy);
+    }
+    
+    if (automation.action.notifyProjectOwners) {
+      // Get project owners
+      const ownerMembers = project.members.filter(member => member.role === 'owner');
+      ownerMembers.forEach(member => {
+        if (member.userId) notificationTargets.push(member.userId);
       });
-      break;
+    }
+    
+    // Remove duplicates
+    const uniqueTargets = [...new Set(notificationTargets)];
+    
+    // Create notifications for each target
+    for (const userId of uniqueTargets) {
+      const notification = new Notification({
+        userId,
+        title: 'Task Notification',
+        message: automation.action.notificationText || `Notification about task: ${task.title}`,
+        type: 'TASK',
+        relatedProjectId: task.projectId,
+        relatedTaskId: task._id
+      });
+      
+      await notification.save();
+    }
+    
+  } catch (error) {
+    console.error('Error sending notification:', error);
+  }
+};
 
-    case 'assign_badge':
-      if (task.assignee) {
-        await User.findByIdAndUpdate(task.assignee, {
-          $push: { 
-            badges: {
-              name: action.value.name || 'Achievement',
-              description: action.value.description || 'Task completed successfully'
-            }
-          }
+// Set up a scheduler for due date passed automations
+export const setupDueDateAutomations = () => {
+  // Run daily at midnight
+  const job = scheduleJob('0 0 * * *', async () => {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      // Find tasks with due date in the past
+      const overdueTasks = await Task.find({
+        dueDate: { $lt: today }
+      });
+      
+      for (const task of overdueTasks) {
+        const automations = await Automation.find({
+          projectId: task.projectId,
+          isActive: true,
+          'trigger.type': 'DUE_DATE_PASSED'
         });
-
-        // Notify user about the badge
-        await Notification.create({
-          userId: task.assignee,
-          title: 'New Badge Earned!',
-          message: `You earned the "${action.value.name || 'Achievement'}" badge`,
-          type: 'system',
-          relatedItemId: task._id,
-          relatedItemType: 'Task'
-        });
-      }
-      break;
-
-    case 'send_notification':
-      if (task.assignee) {
-        await Notification.create({
-          userId: task.assignee,
-          title: action.value.title || 'Task Update',
-          message: action.value.message || `Task "${task.title}" has been updated`,
-          type: 'task',
-          relatedItemId: task._id,
-          relatedItemType: 'Task'
-        });
-      }
-      break;
-
-    case 'assign_user':
-      const previousAssignee = task.assignee;
-      await Task.findByIdAndUpdate(task._id, { 
-        assignee: action.value,
-        $push: { 
-          history: {
-            field: 'assignee',
-            oldValue: previousAssignee,
-            newValue: action.value,
-            changedBy: 'automation'
+        
+        if (automations.length > 0) {
+          const project = await Project.findById(task.projectId);
+          
+          for (const automation of automations) {
+            await executeAutomationAction(automation, task, project);
           }
         }
-      });
-
-      // Notify the newly assigned user
-      await Notification.create({
-        userId: action.value,
-        title: 'Task Assigned',
-        message: `Task "${task.title}" has been assigned to you`,
-        type: 'task',
-        relatedItemId: task._id,
-        relatedItemType: 'Task'
-      });
-      break;
-  }
+      }
+    } catch (error) {
+      console.error('Error processing due date automations:', error);
+    }
+  });
+  
+  console.log('Due date automation scheduler set up');
+  
+  return job;
 };

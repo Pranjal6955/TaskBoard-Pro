@@ -1,22 +1,31 @@
-const express = require('express');
+import express from 'express';
+import { 
+  createTask,
+  getProjectTasks,
+  getTaskById,
+  updateTask,
+  updateTaskStatus,
+  deleteTask,
+  updateProjectStatuses,
+  getUserTasks
+} from '../controllers/taskController.js';
+import { authenticateToken } from '../middleware/auth.js';
+
 const router = express.Router();
-const taskController = require('../controllers/taskController');
-const { protect } = require('../middleware/authMiddleware');
-const { checkProjectAccess } = require('../middleware/projectAccessMiddleware');
 
-// All routes are protected
-router.use(protect);
+// All routes require authentication
+router.use(authenticateToken);
 
-// Task routes by project
-router.get('/project/:projectId', checkProjectAccess, taskController.getTasks);
-router.post('/', taskController.createTask);
+// Task CRUD routes
+router.post('/', createTask);
+router.get('/project/:projectId', getProjectTasks);
+router.get('/user/assigned', getUserTasks); // Add this new route
+router.get('/:taskId', getTaskById);
+router.put('/:taskId', updateTask);
+router.patch('/:taskId/status', updateTaskStatus);
+router.delete('/:taskId', deleteTask);
 
-// Individual task routes
-router.get('/:taskId', taskController.getTask);
-router.put('/:taskId', taskController.updateTask);
-router.delete('/:taskId', taskController.deleteTask);
+// Project statuses routes
+router.put('/project/:projectId/statuses', updateProjectStatuses);
 
-// Task comments
-router.post('/:taskId/comments', taskController.addComment);
-
-module.exports = router;
+export default router;

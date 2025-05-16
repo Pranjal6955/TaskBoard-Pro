@@ -1,266 +1,434 @@
-const Task = require('../models/Task');
-const Project = require('../models/Project');
-const Automation = require('../models/Automation');
-const automationService = require('../services/automationService');
+import Task from '../models/taskModel.js';
+import Project from '../models/projectModel.js';
+import User from '../models/userModel.js';
+import { processTaskAutomations } from '../services/automationService.js';
+import { getIO } from '../websocket/socketServer.js';
+import { sendTaskAssignment } from '../services/emailService.js';
+import { isAuthorizedForTask } from '../utils/taskUtils.js';
 
-// Get all tasks for a project
-exports.getTasks = async (req, res) => {
+// Create a new task
+export const createTask = async (req, res) => {
   try {
-    const { projectId } = req.params;
+    const { title, description, projectId, status, assignee, dueDate } = req.body;
+    const { uid } = req.user;
     
-    // Ensure user has access to this project (middleware should handle this)
-    const tasks = await Task.find({ projectId })
-      .populate('assignee', 'name email')
-      .sort({ createdAt: -1 });
-    
-    res.status(200).json(tasks);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error fetching tasks' });
-  }
-};
-
-// Get a single task
-exports.getTask = async (req, res) => {
-  try {
-    const task = await Task.findById(req.params.taskId)
-      .populate('assignee', 'name email')
-      .populate('comments.userId', 'name email');
-    
-    if (!task) {
-      return res.status(404).json({ message: 'Task not found' });
-    }
-    
-    // Project access check should be handled by middleware
-    res.status(200).json(task);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error fetching task' });
-  }
-};
-
-// Create a task
-exports.createTask = async (req, res) => {
-  try {
-    const { title, description, dueDate, status, assignee, projectId } = req.body;
-    
-    if (!title || !projectId) {
-      return res.status(400).json({ message: 'Title and project ID are required' });
-    }
-    
-    // Ensure project exists and user is a member (handled by middleware)
+    // Verify that the project exists
     const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
     
-    // Verify status is valid for this project
-    if (status && !project.statuses.includes(status)) {
+    // Verify that user is a project owner
+    const userMember = project.members.find(member => member.userId === uid);
+    if (!userMember || userMember.role !== 'owner') {
+      return res.status(403).json({ message: 'Access denied. Only project owners can create tasks.' });
+    }
+    
+    // Verify the status is valid for the project
+    if (!project.statuses.includes(status)) {
       return res.status(400).json({ 
-        message: 'Invalid status. Choose from: ' + project.statuses.join(', ')
+        message: 'Invalid status. Must be one of the project statuses.',
+        validStatuses: project.statuses
       });
+    }
+    
+    // Find the assignee if provided by email
+    let assigneeData = null;
+    if (assignee) {
+      // Check if the assignee email is a project member
+      const assigneeMember = project.members.find(member => member.email === assignee);
+      
+      if (!assigneeMember) {
+        return res.status(400).json({ message: 'Assignee must be a member of the project.' });
+      }
+      
+      assigneeData = {
+        userId: assigneeMember.userId,
+        email: assigneeMember.email
+      };
     }
     
     const task = new Task({
       title,
       description,
-      dueDate,
-      status: status || 'To Do',
-      assignee,
       projectId,
-      history: [{
-        field: 'status',
-        oldValue: null,
-        newValue: status || 'To Do',
-        changedBy: req.user._id
-      }]
+      status: status || project.statuses[0], // Default to first status if not provided
+      assignee: assigneeData,
+      dueDate,
+      createdBy: uid
     });
     
     await task.save();
-
-    // Get the io instance for real-time updates
-    const io = req.app.get('io');
-    io.to(projectId).emit('task-created', task);
     
-    // Process any relevant automations for task creation
-    await automationService.processAutomations('task_created', task, req.user);
+    // Send email notification to assignee if task is assigned
+    if (assigneeData) {
+      try {
+        // Get the creator's name
+        const creator = await User.findOne({ uid });
+        
+        // Generate task link
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const taskLink = `${frontendUrl}/projects/${projectId}?task=${task._id}`;
+        
+        await sendTaskAssignment({
+          email: assigneeData.email,
+          taskTitle: task.title,
+          projectName: project.title,
+          assignerName: creator ? creator.name : 'A team member',
+          dueDate: task.dueDate,
+          taskLink
+        });
+        console.log(`Task assignment email sent to ${assigneeData.email}`);
+      } catch (emailError) {
+        console.error('Error sending task assignment email:', emailError);
+        // Don't fail the request if email sending fails
+      }
+    }
+    
+    // Emit real-time update via WebSocket
+    const io = getIO();
+    io.to(`project:${task.projectId}`).emit('task-created', task);
     
     res.status(201).json(task);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error creating task' });
+    console.error('Error creating task:', error);
+    res.status(500).json({ message: 'Error creating task', error: error.message });
   }
 };
 
-// Update a task
-exports.updateTask = async (req, res) => {
+// Get all tasks for a project
+export const getProjectTasks = async (req, res) => {
   try {
-    const { title, description, dueDate, status, assignee } = req.body;
-    const updates = {};
-    const history = [];
+    const { projectId } = req.params;
+    const { uid } = req.user;
     
-    // Fetch the original task for history tracking
-    const originalTask = await Task.findById(req.params.taskId);
+    // Verify that the project exists
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
     
-    if (!originalTask) {
+    // Verify that user is a member of the project
+    const isMember = project.members.some(member => member.userId === uid);
+    if (!isMember) {
+      return res.status(403).json({ message: 'Access denied. You are not a member of this project.' });
+    }
+    
+    const tasks = await Task.find({ projectId });
+    
+    res.status(200).json(tasks);
+  } catch (error) {
+    console.error('Error fetching tasks:', error);
+    res.status(500).json({ message: 'Error fetching tasks', error: error.message });
+  }
+};
+
+// Get a single task by ID
+export const getTaskById = async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { uid } = req.user;
+    
+    const task = await Task.findById(taskId);
+    if (!task) {
       return res.status(404).json({ message: 'Task not found' });
     }
     
-    // Build updates and history records
-    if (title !== undefined && title !== originalTask.title) {
-      updates.title = title;
-      history.push({
-        field: 'title',
-        oldValue: originalTask.title,
-        newValue: title,
-        changedBy: req.user._id
-      });
+    // Verify that the project exists
+    const project = await Project.findById(task.projectId);
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
     }
     
-    if (description !== undefined && description !== originalTask.description) {
-      updates.description = description;
-      history.push({
-        field: 'description',
-        oldValue: originalTask.description,
-        newValue: description,
-        changedBy: req.user._id
-      });
-    }
-    
-    if (dueDate !== undefined && new Date(dueDate).getTime() !== new Date(originalTask.dueDate).getTime()) {
-      updates.dueDate = dueDate;
-      history.push({
-        field: 'dueDate',
-        oldValue: originalTask.dueDate,
-        newValue: dueDate,
-        changedBy: req.user._id
-      });
-    }
-    
-    if (status !== undefined && status !== originalTask.status) {
-      const project = await Project.findById(originalTask.projectId);
-      
-      if (!project.statuses.includes(status)) {
-        return res.status(400).json({ 
-          message: 'Invalid status. Choose from: ' + project.statuses.join(', ')
-        });
-      }
-      
-      updates.status = status;
-      history.push({
-        field: 'status',
-        oldValue: originalTask.status,
-        newValue: status,
-        changedBy: req.user._id
-      });
-    }
-    
-    if (assignee !== undefined && assignee !== (originalTask.assignee && originalTask.assignee.toString())) {
-      updates.assignee = assignee;
-      history.push({
-        field: 'assignee',
-        oldValue: originalTask.assignee,
-        newValue: assignee,
-        changedBy: req.user._id
-      });
-    }
-    
-    // Add history records to updates
-    if (history.length > 0) {
-      updates.$push = { history: { $each: history } };
-    }
-    
-    // Update the task
-    const task = await Task.findByIdAndUpdate(
-      req.params.taskId,
-      updates,
-      { new: true }
-    ).populate('assignee', 'name email');
-    
-    // Real-time update
-    const io = req.app.get('io');
-    io.to(task.projectId.toString()).emit('task-updated', task);
-    
-    // Process automations based on the updates
-    if (history.length > 0) {
-      for (const change of history) {
-        if (change.field === 'status') {
-          await automationService.processAutomations('task_status_changed', task, req.user);
-        } else if (change.field === 'assignee') {
-          await automationService.processAutomations('task_assigned', task, req.user);
-        }
-      }
+    // Verify that user is a member of the project
+    const isMember = project.members.some(member => member.userId === uid);
+    if (!isMember) {
+      return res.status(403).json({ message: 'Access denied. You are not a member of this project.' });
     }
     
     res.status(200).json(task);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error updating task' });
+    console.error('Error fetching task:', error);
+    res.status(500).json({ message: 'Error fetching task', error: error.message });
+  }
+};
+
+// Update a task
+export const updateTask = async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { title, description, status, assignee, dueDate } = req.body;
+    const { uid } = req.user;
+    
+    const task = await Task.findById(taskId);
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+    
+    // Verify that the project exists
+    const project = await Project.findById(task.projectId);
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+    
+    // Check if user is the task assignee or project owner
+    const userMember = project.members.find(member => member.userId === uid);
+    const isProjectOwner = userMember && userMember.role === 'owner';
+    
+    // Only project owners can update most task details
+    if (!isProjectOwner) {
+      return res.status(403).json({ message: 'Access denied. Only project owners can update task details.' });
+    }
+    
+    // Save the previous state for automation comparison
+    const previousTask = { ...task.toObject() };
+    
+    // Check if assignee is changing
+    const isAssigneeChanging = assignee !== undefined && 
+      (!task.assignee || task.assignee.email !== assignee);
+    
+    // Update task fields
+    if (title) task.title = title;
+    if (description !== undefined) task.description = description;
+    if (status) task.status = status;
+    
+    // Handle assignee update
+    let newAssigneeData = null;
+    if (assignee !== undefined) {
+      if (assignee) {
+        // Check if the assignee email is a project member
+        const assigneeMember = project.members.find(member => member.email === assignee);
+        
+        if (!assigneeMember) {
+          return res.status(400).json({ message: 'Assignee must be a member of the project.' });
+        }
+        
+        newAssigneeData = {
+          userId: assigneeMember.userId,
+          email: assigneeMember.email
+        };
+        task.assignee = newAssigneeData;
+      } else {
+        task.assignee = null;
+      }
+    }
+    
+    if (dueDate !== undefined) task.dueDate = dueDate;
+    task.updatedAt = Date.now();
+    
+    await task.save();
+    
+    // Send email notification if assignee was changed
+    if (isAssigneeChanging && newAssigneeData) {
+      try {
+        // Get the assigner's name
+        const assigner = await User.findOne({ uid });
+        
+        // Generate task link
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const taskLink = `${frontendUrl}/projects/${task.projectId}?task=${task._id}`;
+        
+        await sendTaskAssignment({
+          email: newAssigneeData.email,
+          taskTitle: task.title,
+          projectName: project.title,
+          assignerName: assigner ? assigner.name : 'A team member',
+          dueDate: task.dueDate,
+          taskLink
+        });
+        console.log(`Task assignment email sent to ${newAssigneeData.email}`);
+      } catch (emailError) {
+        console.error('Error sending task assignment email:', emailError);
+        // Don't fail the request if email sending fails
+      }
+    }
+    
+    // Process automations
+    await processTaskAutomations(task, previousTask);
+    
+    // Emit real-time update via WebSocket
+    const io = getIO();
+    io.to(`project:${task.projectId}`).emit('task-updated', task);
+    
+    res.status(200).json(task);
+  } catch (error) {
+    console.error('Error updating task:', error);
+    res.status(500).json({ message: 'Error updating task', error: error.message });
+  }
+};
+
+// Update task status (move task)
+export const updateTaskStatus = async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { status } = req.body;
+    const { uid } = req.user;
+    
+    console.log(`User ${uid} attempting to update task ${taskId} to status: ${status}`);
+    
+    const task = await Task.findById(taskId);
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+    
+    // Verify that the project exists
+    const project = await Project.findById(task.projectId);
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+    
+    // Check if user is authorized (project owner, task assignee, or project member)
+    if (!isAuthorizedForTask(task, project, uid)) {
+      console.log('Authorization failed for user:', uid);
+      return res.status(403).json({ 
+        message: 'Access denied. Only project members can update task status.'
+      });
+    }
+
+    // Verify the status is valid for the project
+    if (!project.statuses.includes(status)) {
+      return res.status(400).json({ 
+        message: 'Invalid status. Must be one of the project statuses.',
+        validStatuses: project.statuses
+      });
+    }
+    
+    // Save the previous state for automation comparison
+    const previousTask = { ...task.toObject() };
+    
+    task.status = status;
+    task.updatedAt = Date.now();
+    
+    await task.save();
+    console.log(`Task ${taskId} status updated to ${status}`);
+    
+    // Process automations
+    await processTaskAutomations(task, previousTask);
+    
+    // Emit real-time update via WebSocket
+    const io = getIO();
+    io.to(`project:${task.projectId}`).emit('task-updated', task);
+    
+    res.status(200).json(task);
+  } catch (error) {
+    console.error('Error updating task status:', error);
+    res.status(500).json({ message: 'Error updating task status', error: error.message });
   }
 };
 
 // Delete a task
-exports.deleteTask = async (req, res) => {
+export const deleteTask = async (req, res) => {
   try {
-    const task = await Task.findById(req.params.taskId);
+    const { taskId } = req.params;
+    const { uid } = req.user;
     
+    const task = await Task.findById(taskId);
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
     }
     
-    const projectId = task.projectId;
+    // Verify that the project exists
+    const project = await Project.findById(task.projectId);
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
     
-    // Delete the task
-    await task.remove();
+    // Only project owners can delete tasks
+    const userMember = project.members.find(member => member.userId === uid);
+    if (!userMember || userMember.role !== 'owner') {
+      return res.status(403).json({ message: 'Access denied. Only project owners can delete tasks.' });
+    }
     
-    // Real-time update
-    const io = req.app.get('io');
-    io.to(projectId.toString()).emit('task-deleted', req.params.taskId);
+    await Task.findByIdAndDelete(taskId);
+    
+    // Emit real-time update via WebSocket
+    const io = getIO();
+    io.to(`project:${task.projectId}`).emit('task-deleted', { taskId, projectId: task.projectId });
     
     res.status(200).json({ message: 'Task deleted successfully' });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error deleting task' });
+    console.error('Error deleting task:', error);
+    res.status(500).json({ message: 'Error deleting task', error: error.message });
   }
 };
 
-// Add comment to task
-exports.addComment = async (req, res) => {
+// Update project statuses
+export const updateProjectStatuses = async (req, res) => {
   try {
-    const { text } = req.body;
+    const { projectId } = req.params;
+    const { statuses } = req.body;
+    const { uid } = req.user;
     
-    if (!text) {
-      return res.status(400).json({ message: 'Comment text is required' });
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
     }
     
-    const task = await Task.findByIdAndUpdate(
-      req.params.taskId,
-      {
-        $push: {
-          comments: {
-            userId: req.user._id,
-            userName: req.user.name,
-            text
-          }
-        }
-      },
-      { new: true }
-    ).populate('comments.userId', 'name email');
-    
-    if (!task) {
-      return res.status(404).json({ message: 'Task not found' });
+    // Verify that user has owner role in project
+    const userMember = project.members.find(member => member.userId === uid);
+    if (!userMember || userMember.role !== 'owner') {
+      return res.status(403).json({ message: 'Access denied. Only project owner can update statuses.' });
     }
     
-    // Real-time update
-    const io = req.app.get('io');
-    io.to(task.projectId.toString()).emit('task-comment-added', {
-      taskId: task._id,
-      comment: task.comments[task.comments.length - 1]
+    // Validate statuses array
+    if (!Array.isArray(statuses) || statuses.length === 0) {
+      return res.status(400).json({ message: 'Statuses must be a non-empty array of strings.' });
+    }
+    
+    // Make sure all tasks with statuses not in the new list are moved to a default status
+    const defaultStatus = statuses[0];
+    const tasksToUpdate = await Task.find({
+      projectId,
+      status: { $nin: statuses }
     });
     
-    res.status(200).json({
-      message: 'Comment added successfully',
-      comment: task.comments[task.comments.length - 1]
+    // Update tasks with outdated statuses
+    if (tasksToUpdate.length > 0) {
+      await Task.updateMany(
+        { 
+          projectId,
+          status: { $nin: statuses }
+        },
+        { status: defaultStatus }
+      );
+    }
+    
+    // Update project statuses
+    project.statuses = statuses;
+    await project.save();
+    
+    res.status(200).json({ 
+      message: 'Project statuses updated successfully', 
+      project,
+      tasksUpdated: tasksToUpdate.length
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error adding comment' });
+    console.error('Error updating project statuses:', error);
+    res.status(500).json({ message: 'Error updating project statuses', error: error.message });
+  }
+};
+
+// Get tasks assigned to a user
+export const getUserTasks = async (req, res) => {
+  try {
+    const { uid } = req.user;
+    
+    const tasks = await Task.find({
+      'assignee.userId': uid
+    }).populate({
+      path: 'projectId',
+      select: 'title members'
+    });
+    
+    // Filter out tasks where the user might no longer be a member of the project
+    const filteredTasks = tasks.filter(task => {
+      if (!task.projectId) return false;
+      return task.projectId.members.some(member => member.userId === uid);
+    });
+    
+    res.status(200).json(filteredTasks);
+  } catch (error) {
+    console.error('Error fetching user tasks:', error);
+    res.status(500).json({ message: 'Error fetching user tasks', error: error.message });
   }
 };

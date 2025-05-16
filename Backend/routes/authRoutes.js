@@ -1,13 +1,9 @@
-const express = require('express');
+import express from 'express';
+import { generateToken } from '../controllers/authController.js';
+
 const router = express.Router();
-const authController = require('../controllers/authController');
-const { protect } = require('../middleware/authMiddleware');
 
-// Public routes
-router.post('/login', authController.loginWithFirebase);
+// Generate token for authenticated users
+router.post('/token', generateToken);
 
-// Protected routes
-router.get('/profile', protect, authController.getCurrentUser);
-router.put('/profile', protect, authController.updateProfile);
-
-module.exports = router;
+export default router;

@@ -1,297 +1,254 @@
-const Project = require('../models/Project');
-const User = require('../models/User');
-const crypto = require('crypto');
+import Project from '../models/projectModel.js';
+import User from '../models/userModel.js';
+import { sendProjectInvitation } from '../services/emailService.js';
 
-// Get all projects for current user
-exports.getProjects = async (req, res) => {
-  try {
-    const projects = await Project.find({
-      'members.userId': req.user._id
-    }).select('-pendingInvites');
-
-    res.status(200).json(projects);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error fetching projects' });
-  }
-};
-
-// Get single project
-exports.getProject = async (req, res) => {
-  try {
-    const project = await Project.findOne({
-      _id: req.params.projectId,
-      'members.userId': req.user._id
-    });
-
-    if (!project) {
-      return res.status(404).json({ message: 'Project not found' });
-    }
-
-    res.status(200).json(project);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error fetching project' });
-  }
-};
-
-// Create project
-exports.createProject = async (req, res) => {
+// Create a new project
+export const createProject = async (req, res) => {
   try {
     const { title, description } = req.body;
-
-    if (!title) {
-      return res.status(400).json({ message: 'Title is required' });
-    }
-
+    const { uid, email } = req.user;
+    
     const project = new Project({
       title,
       description,
-      members: [{
-        userId: req.user._id,
-        role: 'owner',
-        email: req.user.email,
-        name: req.user.name
-      }],
-      statuses: ['To Do', 'In Progress', 'Done']
+      createdBy: uid,
+      members: [
+        {
+          userId: uid,
+          email,
+          role: 'owner',
+          joinedAt: Date.now()
+        }
+      ]
     });
-
+    
     await project.save();
-
-    // Add project to user's projects
-    await User.findByIdAndUpdate(
-      req.user._id,
-      { $push: { projects: project._id } }
-    );
-
+    
     res.status(201).json(project);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error creating project' });
+    console.error('Error creating project:', error);
+    res.status(500).json({ message: 'Error creating project', error: error.message });
+  }
+};
+
+// Get all projects for current user
+export const getUserProjects = async (req, res) => {
+  try {
+    const { uid } = req.user;
+    
+    const projects = await Project.find({
+      'members.userId': uid
+    });
+    
+    res.status(200).json(projects);
+  } catch (error) {
+    console.error('Error fetching projects:', error);
+    res.status(500).json({ message: 'Error fetching projects', error: error.message });
+  }
+};
+
+// Get project by ID
+export const getProjectById = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { uid } = req.user;
+    
+    const project = await Project.findById(projectId);
+    
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+    
+    // Check if user is a member of the project
+    const isMember = project.members.some(member => member.userId === uid);
+    
+    if (!isMember) {
+      return res.status(403).json({ message: 'Access denied. You are not a member of this project.' });
+    }
+    
+    res.status(200).json(project);
+  } catch (error) {
+    console.error('Error fetching project:', error);
+    res.status(500).json({ message: 'Error fetching project', error: error.message });
   }
 };
 
 // Update project
-exports.updateProject = async (req, res) => {
+export const updateProject = async (req, res) => {
   try {
-    const { title, description, statuses } = req.body;
-    const updates = {};
-
-    if (title) updates.title = title;
-    if (description !== undefined) updates.description = description;
-    if (statuses) updates.statuses = statuses;
-
-    const project = await Project.findOneAndUpdate(
-      {
-        _id: req.params.projectId,
-        'members.userId': req.user._id,
-        'members.role': 'owner'
-      },
-      { $set: updates },
-      { new: true }
-    );
-
+    const { projectId } = req.params;
+    const { title, description } = req.body;
+    const { uid } = req.user;
+    
+    const project = await Project.findById(projectId);
+    
     if (!project) {
-      return res.status(404).json({ 
-        message: 'Project not found or you do not have permission to update it' 
-      });
+      return res.status(404).json({ message: 'Project not found' });
     }
-
+    
+    // Check if user is a member of the project
+    const userMember = project.members.find(member => member.userId === uid);
+    
+    if (!userMember) {
+      return res.status(403).json({ message: 'Access denied. You are not a member of this project.' });
+    }
+    
+    // Only allow updates if user is owner
+    if (userMember.role !== 'owner') {
+      return res.status(403).json({ message: 'Access denied. Only project owners can update project details.' });
+    }
+    
+    project.title = title || project.title;
+    project.description = description || project.description;
+    project.updatedAt = Date.now();
+    
+    await project.save();
+    
     res.status(200).json(project);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error updating project' });
-  }
-};
-
-// Delete project
-exports.deleteProject = async (req, res) => {
-  try {
-    const project = await Project.findOneAndDelete({
-      _id: req.params.projectId,
-      'members.userId': req.user._id,
-      'members.role': 'owner'
-    });
-
-    if (!project) {
-      return res.status(404).json({ 
-        message: 'Project not found or you do not have permission to delete it' 
-      });
-    }
-
-    // Remove project from all users' projects array
-    await User.updateMany(
-      { projects: req.params.projectId },
-      { $pull: { projects: req.params.projectId } }
-    );
-
-    res.status(200).json({ message: 'Project deleted successfully' });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error deleting project' });
+    console.error('Error updating project:', error);
+    res.status(500).json({ message: 'Error updating project', error: error.message });
   }
 };
 
 // Invite user to project
-exports.inviteUser = async (req, res) => {
+export const inviteUserToProject = async (req, res) => {
   try {
-    const { email, role } = req.body;
+    const { projectId } = req.params;
+    const { email } = req.body;
+    const { uid } = req.user;
     
-    if (!email) {
-      return res.status(400).json({ message: 'Email is required' });
-    }
-
-    const project = await Project.findOne({
-      _id: req.params.projectId,
-      'members.userId': req.user._id,
-      'members.role': 'owner'
-    });
-
+    const project = await Project.findById(projectId);
+    
     if (!project) {
-      return res.status(404).json({ 
-        message: 'Project not found or you do not have permission to invite users' 
-      });
+      return res.status(404).json({ message: 'Project not found' });
     }
-
+    
+    // Check if user is a member of the project with owner role
+    const userMember = project.members.find(member => member.userId === uid);
+    
+    if (!userMember || userMember.role !== 'owner') {
+      return res.status(403).json({ message: 'Access denied. Only project owners can invite users.' });
+    }
+    
     // Check if user is already a member
-    const memberExists = project.members.some(member => member.email === email);
-    if (memberExists) {
-      return res.status(400).json({ message: 'User is already a member of this project' });
-    }
-
-    // Check if invitation already exists
-    const inviteExists = project.pendingInvites.some(invite => invite.email === email);
-    if (inviteExists) {
-      return res.status(400).json({ message: 'Invitation already sent to this email' });
-    }
-
-    // Generate invitation token
-    const token = crypto.randomBytes(20).toString('hex');
+    const isAlreadyMember = project.members.some(member => member.email === email);
     
-    // Add to pending invites
-    project.pendingInvites.push({
-      email,
-      role: role || 'member',
-      token
-    });
-
-    await project.save();
-
-    // Here you would typically send an email with the invitation link
-    // For now, we'll just return the token as part of the response
-    res.status(200).json({ 
-      message: 'Invitation sent successfully',
-      inviteToken: token
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error sending invitation' });
-  }
-};
-
-// Accept project invitation
-exports.acceptInvitation = async (req, res) => {
-  try {
-    const { token } = req.body;
+    if (isAlreadyMember) {
+      return res.status(400).json({ message: 'User is already a member of this project.' });
+    }
     
-    if (!token) {
-      return res.status(400).json({ message: 'Invitation token is required' });
-    }
-
-    // Find project with this pending invite
-    const project = await Project.findOne({
-      'pendingInvites.token': token,
-      'pendingInvites.email': req.user.email
-    });
-
-    if (!project) {
-      return res.status(404).json({ message: 'Invalid or expired invitation' });
-    }
-
-    // Get invite details
-    const invite = project.pendingInvites.find(inv => inv.token === token);
+    // Find user by email (if they exist)
+    const user = await User.findOne({ email });
     
     // Add user to project members
     project.members.push({
-      userId: req.user._id,
-      role: invite.role,
-      email: req.user.email,
-      name: req.user.name
+      userId: user ? user.uid : null,
+      email,
+      role: 'member',
+      joinedAt: Date.now()
     });
-
-    // Remove from pending invites
-    project.pendingInvites = project.pendingInvites.filter(inv => inv.token !== token);
     
     await project.save();
-
-    // Add project to user's projects
-    await User.findByIdAndUpdate(
-      req.user._id,
-      { $push: { projects: project._id } }
-    );
-
-    res.status(200).json({ 
-      message: 'Invitation accepted successfully',
-      project
-    });
+    
+    // Get the inviter's name
+    const inviter = await User.findOne({ uid });
+    
+    // Generate invitation link
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const invitationLink = `${frontendUrl}/projects/${projectId}`;
+    
+    // Send invitation email
+    try {
+      if (process.env.EMAIL_USER) {
+        await sendProjectInvitation({
+          email,
+          projectName: project.title,
+          inviterName: inviter?.name || 'A project owner',
+          invitationLink
+        });
+        console.log(`Invitation email sent to ${email}`);
+      }
+    } catch (emailError) {
+      console.error('Error sending invitation email:', emailError);
+      // Don't fail the request if email sending fails
+    }
+    
+    res.status(200).json({ message: 'User invited successfully', project });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error accepting invitation' });
+    console.error('Error inviting user to project:', error);
+    res.status(500).json({ message: 'Error inviting user to project', error: error.message });
   }
 };
 
 // Remove user from project
-exports.removeUser = async (req, res) => {
+export const removeUserFromProject = async (req, res) => {
   try {
-    const { userId } = req.body;
+    const { projectId, userId } = req.params;
+    const { uid } = req.user;
     
-    if (!userId) {
-      return res.status(400).json({ message: 'User ID is required' });
-    }
-
-    // Only project owners can remove users
-    const project = await Project.findOne({
-      _id: req.params.projectId,
-      'members.userId': req.user._id,
-      'members.role': 'owner'
-    });
-
+    const project = await Project.findById(projectId);
+    
     if (!project) {
-      return res.status(404).json({ 
-        message: 'Project not found or you do not have permission to remove users' 
-      });
+      return res.status(404).json({ message: 'Project not found' });
     }
-
-    // Check if trying to remove the owner
-    const isOwner = project.members.some(
-      member => member.userId.toString() === userId && member.role === 'owner'
-    );
-
-    if (isOwner) {
-      return res.status(400).json({ 
-        message: 'Cannot remove the project owner. Transfer ownership first.' 
-      });
+    
+    // Check if user is a member of the project with owner role
+    const userMember = project.members.find(member => member.userId === uid);
+    
+    if (!userMember || userMember.role !== 'owner') {
+      return res.status(403).json({ message: 'Access denied. Only project owners can remove users.' });
     }
-
-    // Remove user from project
-    project.members = project.members.filter(
-      member => member.userId.toString() !== userId
+    
+    // Cannot remove yourself (owner) from the project
+    if (userId === uid) {
+      return res.status(400).json({ message: 'Cannot remove project owner. Transfer ownership first.' });
+    }
+    
+    // Remove user from project members
+    const memberToRemove = project.members.find(member => member.userId === userId || member.email === userId);
+    
+    if (!memberToRemove) {
+      return res.status(404).json({ message: 'Member not found in project' });
+    }
+    
+    project.members = project.members.filter(member => 
+      member.userId !== userId && member.email !== userId
     );
     
     await project.save();
-
-    // Remove project from user's projects
-    await User.findByIdAndUpdate(
-      userId,
-      { $pull: { projects: project._id } }
-    );
-
-    res.status(200).json({ 
-      message: 'User removed from project successfully',
-      project
-    });
+    
+    res.status(200).json({ message: 'User removed successfully', project });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error removing user from project' });
+    console.error('Error removing user from project:', error);
+    res.status(500).json({ message: 'Error removing user from project', error: error.message });
+  }
+};
+
+// Delete project
+export const deleteProject = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { uid } = req.user;
+    
+    const project = await Project.findById(projectId);
+    
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+    
+    // Check if user is the project owner
+    const isOwner = project.members.some(member => member.userId === uid && member.role === 'owner');
+    
+    if (!isOwner) {
+      return res.status(403).json({ message: 'Access denied. Only project owner can delete a project.' });
+    }
+    
+    await Project.findByIdAndDelete(projectId);
+    
+    res.status(200).json({ message: 'Project deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting project:', error);
+    res.status(500).json({ message: 'Error deleting project', error: error.message });
   }
 };
