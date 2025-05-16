@@ -29,3 +29,9 @@ export const inviteUserToProject = async (projectId, email) => {
   const response = await api.post(`/projects/${projectId}/invite`, { email });
   return response.data;
 };
+
+// Remove user from project
+export const removeUserFromProject = async (projectId, userId) => {
+  const response = await api.delete(`/projects/${projectId}/members/${userId}`);
+  return response.data;
+};

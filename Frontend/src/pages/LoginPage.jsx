@@ -2,37 +2,18 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import Button from '../components/ui/Button';
-import { Activity, Mail, Lock, LogIn } from 'lucide-react';
+import { Activity } from 'lucide-react';
 import { 
-  signInWithEmailAndPassword, 
   GoogleAuthProvider, 
   signInWithPopup 
 } from 'firebase/auth';
 import { auth } from '../firebase/config';
 
 const LoginPage = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setError('');
-    
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-      navigate('/dashboard');
-    } catch (error) {
-      console.error('Login error:', error);
-      setError(error.message.replace('Firebase: ', ''));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-  
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     setError('');
@@ -91,7 +72,7 @@ const LoginPage = () => {
           >
             <div className="text-center mb-6">
               <h2 className="text-2xl font-bold">Log in to your account</h2>
-              <p className="text-white/70 mt-2">Enter your credentials to access your workspace</p>
+              <p className="text-white/70 mt-2">Continue with Google to access your workspace</p>
             </div>
             
             {error && (
@@ -126,73 +107,6 @@ const LoginPage = () => {
               </svg>
               Continue with Google
             </Button>
-            
-            <div className="flex items-center my-6">
-              <div className="flex-1 border-t border-[#333333]"></div>
-              <div className="px-3 text-white/50 text-sm">Or continue with email</div>
-              <div className="flex-1 border-t border-[#333333]"></div>
-            </div>
-            
-            <form onSubmit={handleSubmit}>
-              <div className="mb-4">
-                <label htmlFor="email" className="block text-sm font-medium text-white/80 mb-2">
-                  Email
-                </label>
-                <div className="relative">
-                  <Mail size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50" />
-                  <input
-                    type="email"
-                    id="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 bg-[#1A1A1A] border border-[#333333] rounded-md text-white focus:outline-none focus:ring-2 focus:ring-[#1DCD9F]/50 focus:border-transparent transition"
-                    placeholder="your@email.com"
-                    required
-                  />
-                </div>
-              </div>
-              
-              <div className="mb-6">
-                <div className="flex justify-between mb-2">
-                  <label htmlFor="password" className="block text-sm font-medium text-white/80">
-                    Password
-                  </label>
-                  <Link to="/forgot-password" className="text-sm text-[#1DCD9F] hover:text-[#169976]">
-                    Forgot password?
-                  </Link>
-                </div>
-                <div className="relative">
-                  <Lock size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50" />
-                  <input
-                    type="password"
-                    id="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 bg-[#1A1A1A] border border-[#333333] rounded-md text-white focus:outline-none focus:ring-2 focus:ring-[#1DCD9F]/50 focus:border-transparent transition"
-                    placeholder="••••••••••"
-                    required
-                  />
-                </div>
-              </div>
-              
-              <Button
-                variant="primary"
-                type="submit"
-                className="w-full"
-                loading={isLoading}
-                icon={<LogIn size={16} />}
-                disabled={!email || !password || isLoading}
-              >
-                Log In
-              </Button>
-              
-              <div className="text-center mt-6 text-white/70">
-                Don't have an account?{' '}
-                <Link to="/signup" className="text-[#1DCD9F] hover:text-[#169976]">
-                  Sign up
-                </Link>
-              </div>
-            </form>
           </motion.div>
         </div>
       </div>

@@ -29,3 +29,9 @@ export const moveTask = async (taskId, status) => {
   const response = await api.patch(`/tasks/${taskId}/status`, { status });
   return response.data;
 };
+
+// Get tasks assigned to the current user
+export const getUserTasks = async () => {
+  const response = await api.get('/tasks/user/assigned');
+  return response.data;
+};

@@ -29,3 +29,9 @@ export const getUserNotifications = async () => {
   const response = await api.get('/automations/notifications');
   return response.data;
 };
+
+// Mark notification as read
+export const markNotificationRead = async (notificationId) => {
+  const response = await api.patch(`/automations/notifications/${notificationId}/read`);
+  return response.data;
+};
