@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import { Calendar, Tag, AlertCircle, Clock, MessageSquare, Edit, Trash2 } from 'lucide-react';
@@ -6,8 +6,15 @@ import { Calendar, Tag, AlertCircle, Clock, MessageSquare, Edit, Trash2 } from '
 const TaskModal = ({ isOpen, onClose, task }) => {
   const [activeTab, setActiveTab] = useState('details');
   const [isEditing, setIsEditing] = useState(false);
-  const [editedTask, setEditedTask] = useState(task);
+  const [editedTask, setEditedTask] = useState(task || {});
   
+  // Update editedTask when task changes
+  useEffect(() => {
+    if (task) {
+      setEditedTask(task);
+    }
+  }, [task]);
+
   const priorityColors = {
     high: 'bg-red-500 text-white',
     medium: 'bg-yellow-500 text-black',
@@ -15,6 +22,7 @@ const TaskModal = ({ isOpen, onClose, task }) => {
   };
   
   const formatDate = (dateString) => {
+    if (!dateString) return 'No date set';
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   };
@@ -88,7 +96,7 @@ const TaskModal = ({ isOpen, onClose, task }) => {
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={isEditing ? "Edit Task" : task.title}
+      title={isEditing ? "Edit Task" : (task?.title || 'Task Details')}
       footer={modalFooter}
       size="lg"
     >
@@ -174,48 +182,56 @@ const TaskModal = ({ isOpen, onClose, task }) => {
         ) : (
           <div className="space-y-4">
             <div className="flex items-center space-x-3 mb-4">
-              <span className={`px-3 py-1 rounded-full text-xs ${priorityColors[task.priority]}`}>
-                {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)} Priority
+              <span className={`px-3 py-1 rounded-full text-xs ${priorityColors[task?.priority || 'medium']}`}>
+                {task?.priority ? (task.priority.charAt(0).toUpperCase() + task.priority.slice(1)) : 'Medium'} Priority
               </span>
               
               <div className="flex items-center text-white/60 text-sm">
                 <Clock size={14} className="mr-1" />
-                Due {formatDate(task.dueDate)}
+                Due {formatDate(task?.dueDate)}
               </div>
             </div>
             
             <p className="text-white/80 leading-relaxed">
-              {task.description}
+              {task?.description || 'No description provided'}
             </p>
             
             <div className="pt-2">
               <h4 className="text-sm font-medium text-white/80 mb-2">Labels</h4>
               <div className="flex flex-wrap gap-2">
-                {task.labels.map((label, i) => (
-                  <span
-                    key={i}
-                    className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs bg-[#1DCD9F]/20 text-[#1DCD9F]"
-                  >
-                    <Tag size={10} className="mr-1" />
-                    {label}
-                  </span>
-                ))}
+                {task?.labels && task.labels.length > 0 ? (
+                  task.labels.map((label, i) => (
+                    <span
+                      key={i}
+                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs bg-[#1DCD9F]/20 text-[#1DCD9F]"
+                    >
+                      <Tag size={10} className="mr-1" />
+                      {label}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-white/50 text-sm">No labels</span>
+                )}
               </div>
             </div>
             
             <div className="pt-2">
               <h4 className="text-sm font-medium text-white/80 mb-2">Assigned To</h4>
-              <div className="flex items-center space-x-3">
-                <img
-                  src={task.assignee.avatar}
-                  alt={task.assignee.name}
-                  className="w-10 h-10 rounded-full border-2 border-[#333333]"
-                />
-                <div>
-                  <div className="text-white font-medium">{task.assignee.name}</div>
-                  <div className="text-white/60 text-sm">Assignee</div>
+              {task?.assignee ? (
+                <div className="flex items-center space-x-3">
+                  <img
+                    src={task.assignee.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(task.assignee.name || 'User')}&background=1A1A1A&color=FFFFFF`}
+                    alt={task.assignee.name || 'Assignee'}
+                    className="w-10 h-10 rounded-full border-2 border-[#333333]"
+                  />
+                  <div>
+                    <div className="text-white font-medium">{task.assignee.name || 'Unknown User'}</div>
+                    <div className="text-white/60 text-sm">Assignee</div>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="text-white/50 text-sm">No assignee</div>
+              )}
             </div>
           </div>
         )
