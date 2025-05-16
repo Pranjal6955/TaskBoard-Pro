@@ -2,38 +2,52 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import Button from '../components/ui/Button';
-import { Activity, Mail, Lock, LogIn } from 'lucide-react';
+import { Activity, Mail, Lock, UserPlus } from 'lucide-react';
 import { 
-  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
   GoogleAuthProvider, 
   signInWithPopup 
 } from 'firebase/auth';
 import { auth } from '../firebase/config';
 
-const LoginPage = () => {
+const SignupPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
+  const validatePasswords = () => {
+    if (password !== confirmPassword) {
+      setPasswordError('Passwords do not match');
+      return false;
+    }
+    setPasswordError('');
+    return true;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    if (!validatePasswords()) return;
+    
     setIsLoading(true);
     setError('');
     
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      await createUserWithEmailAndPassword(auth, email, password);
       navigate('/dashboard');
     } catch (error) {
-      console.error('Login error:', error);
+      console.error('Signup error:', error);
       setError(error.message.replace('Firebase: ', ''));
     } finally {
       setIsLoading(false);
     }
   };
   
-  const handleGoogleLogin = async () => {
+  const handleGoogleSignup = async () => {
     setIsLoading(true);
     setError('');
     
@@ -42,7 +56,7 @@ const LoginPage = () => {
       await signInWithPopup(auth, provider);
       navigate('/dashboard');
     } catch (error) {
-      console.error('Google login error:', error);
+      console.error('Google signup error:', error);
       setError(error.message.replace('Firebase: ', ''));
     } finally {
       setIsLoading(false);
@@ -62,8 +76,8 @@ const LoginPage = () => {
             className="hidden md:block"
           >
             <Activity size={48} className="text-[#1DCD9F] mb-6" />
-            <h1 className="text-4xl font-bold mb-4">Welcome back</h1>
-            <p className="text-white/70 text-lg mb-6">Log in to your TaskBoard Pro account to continue managing your projects and collaborating with your team.</p>
+            <h1 className="text-4xl font-bold mb-4">Join TaskBoard Pro</h1>
+            <p className="text-white/70 text-lg mb-6">Create your TaskBoard Pro account to start managing your projects and collaborating with your team.</p>
             
             <div className="bg-[#1A1A1A] border border-[#333333] rounded-lg p-4">
               <p className="text-white/90 italic">
@@ -90,8 +104,8 @@ const LoginPage = () => {
             className="bg-[#222222] p-8 rounded-lg border border-[#333333] shadow-xl"
           >
             <div className="text-center mb-6">
-              <h2 className="text-2xl font-bold">Log in to your account</h2>
-              <p className="text-white/70 mt-2">Enter your credentials to access your workspace</p>
+              <h2 className="text-2xl font-bold">Create your account</h2>
+              <p className="text-white/70 mt-2">Sign up to get started with TaskBoard Pro</p>
             </div>
             
             {error && (
@@ -103,7 +117,7 @@ const LoginPage = () => {
             <Button
               variant="outline"
               className="w-full mb-6 bg-[#1A1A1A]"
-              onClick={handleGoogleLogin}
+              onClick={handleGoogleSignup}
               loading={isLoading}
             >
               <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
@@ -152,15 +166,10 @@ const LoginPage = () => {
                 </div>
               </div>
               
-              <div className="mb-6">
-                <div className="flex justify-between mb-2">
-                  <label htmlFor="password" className="block text-sm font-medium text-white/80">
-                    Password
-                  </label>
-                  <Link to="/forgot-password" className="text-sm text-[#1DCD9F] hover:text-[#169976]">
-                    Forgot password?
-                  </Link>
-                </div>
+              <div className="mb-4">
+                <label htmlFor="password" className="block text-sm font-medium text-white/80 mb-2">
+                  Password
+                </label>
                 <div className="relative">
                   <Lock size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50" />
                   <input
@@ -171,8 +180,31 @@ const LoginPage = () => {
                     className="w-full pl-10 pr-4 py-2 bg-[#1A1A1A] border border-[#333333] rounded-md text-white focus:outline-none focus:ring-2 focus:ring-[#1DCD9F]/50 focus:border-transparent transition"
                     placeholder="••••••••••"
                     required
+                    minLength={8}
                   />
                 </div>
+              </div>
+
+              <div className="mb-6">
+                <label htmlFor="confirmPassword" className="block text-sm font-medium text-white/80 mb-2">
+                  Confirm Password
+                </label>
+                <div className="relative">
+                  <Lock size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50" />
+                  <input
+                    type="password"
+                    id="confirmPassword"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 bg-[#1A1A1A] border border-[#333333] rounded-md text-white focus:outline-none focus:ring-2 focus:ring-[#1DCD9F]/50 focus:border-transparent transition"
+                    placeholder="••••••••••"
+                    required
+                    minLength={8}
+                  />
+                </div>
+                {passwordError && (
+                  <p className="text-red-500 text-sm mt-1">{passwordError}</p>
+                )}
               </div>
               
               <Button
@@ -180,16 +212,16 @@ const LoginPage = () => {
                 type="submit"
                 className="w-full"
                 loading={isLoading}
-                icon={<LogIn size={16} />}
-                disabled={!email || !password || isLoading}
+                icon={<UserPlus size={16} />}
+                disabled={!email || !password || !confirmPassword || isLoading}
               >
-                Log In
+                Sign Up
               </Button>
               
               <div className="text-center mt-6 text-white/70">
-                Don't have an account?{' '}
-                <Link to="/signup" className="text-[#1DCD9F] hover:text-[#169976]">
-                  Sign up
+                Already have an account?{' '}
+                <Link to="/login" className="text-[#1DCD9F] hover:text-[#169976]">
+                  Log in
                 </Link>
               </div>
             </form>
@@ -200,4 +232,4 @@ const LoginPage = () => {
   );
 };
 
-export default LoginPage;
+export default SignupPage;
