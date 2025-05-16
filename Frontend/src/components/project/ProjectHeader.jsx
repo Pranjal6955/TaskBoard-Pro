@@ -1,22 +1,40 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useLocation } from 'react-router-dom';
 import Button from '../ui/Button';
-import { Calendar, Users, Settings, PieChart } from 'lucide-react';
+import { Calendar, Users, Settings, PieChart, UserPlus } from 'lucide-react';
+import InviteMemberModal from './InviteMemberModal';
 
-const ProjectHeader = ({ project }) => {
+const ProjectHeader = ({ project, onProjectUpdated }) => {
   const location = useLocation();
   const currentPath = location.pathname;
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   
   const formatDate = (dateString) => {
+    if (!dateString) return 'Not set';
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
   
+  // Calculate project progress based on tasks if available, or use the provided value
+  const progress = project.progress || 0;
+
+  // Ensure we have a valid project ID by checking various possible properties
+  const projectId = project._id || project.id;
+  
   const tabs = [
-    { id: 'tasks', label: 'Tasks', path: `/project/${project.id}` },
-    { id: 'automations', label: 'Automations', path: `/project/${project.id}/automation` }
+    { id: 'tasks', label: 'Tasks', path: `/project/${projectId}` },
+    { id: 'automations', label: 'Automations', path: `/project/${projectId}/automation` }
   ];
+
+  const handleMemberUpdate = (updatedMembers) => {
+    if (onProjectUpdated) {
+      onProjectUpdated({
+        ...project,
+        members: updatedMembers
+      });
+    }
+  };
   
   return (
     <div className="bg-[#222222] border-b border-[#333333]">
@@ -29,23 +47,36 @@ const ProjectHeader = ({ project }) => {
           
           <div className="flex items-center space-x-3 mt-4 md:mt-0">
             <div className="flex -space-x-2 mr-2">
-              {project.members.map((member) => (
-                <img
-                  key={member.id}
-                  src={member.avatar}
-                  alt={member.name}
-                  className="w-8 h-8 rounded-full border-2 border-[#222222]"
-                  title={member.name}
-                />
-              ))}
+              {project.members && project.members.length > 0 ? (
+                project.members.slice(0, 3).map((member) => (
+                  <img
+                    key={member.id || member.userId || member._id}
+                    src={member.avatar || member.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(member.email || 'User')}&background=1A1A1A&color=FFFFFF`}
+                    alt={member.name || member.email || 'User'}
+                    className="w-8 h-8 rounded-full border-2 border-[#222222]"
+                    title={member.name || member.email || 'Team member'}
+                  />
+                ))
+              ) : (
+                <div className="w-8 h-8 rounded-full border-2 border-[#222222] bg-[#333333] flex items-center justify-center">
+                  <Users size={14} />
+                </div>
+              )}
+              
+              {project.members && project.members.length > 3 && (
+                <div className="w-8 h-8 rounded-full bg-[#333333] border-2 border-[#222222] flex items-center justify-center text-xs text-white">
+                  +{project.members.length - 3}
+                </div>
+              )}
             </div>
             
             <Button 
               variant="outline" 
               size="sm"
-              icon={<Users size={14} />}
+              icon={<UserPlus size={14} />}
+              onClick={() => setIsInviteModalOpen(true)}
             >
-              Manage Team
+              Invite
             </Button>
             
             <Button 
@@ -66,7 +97,7 @@ const ProjectHeader = ({ project }) => {
             
             <div className="flex items-center text-white/70 text-sm">
               <PieChart size={16} className="mr-2 text-[#1DCD9F]" />
-              Progress: {project.progress}%
+              Progress: {progress}%
             </div>
           </div>
           
@@ -93,6 +124,14 @@ const ProjectHeader = ({ project }) => {
           </div>
         </div>
       </div>
+      
+      <InviteMemberModal
+        isOpen={isInviteModalOpen}
+        onClose={() => setIsInviteModalOpen(false)} 
+        projectId={projectId}
+        currentMembers={project.members || []}
+        onMembersUpdated={handleMemberUpdate}
+      />
     </div>
   );
 };

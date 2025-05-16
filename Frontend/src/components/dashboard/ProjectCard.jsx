@@ -13,6 +13,7 @@ import { Calendar, Users } from 'lucide-react';
 /**
  * @typedef {Object} ProjectCardProps
  * @property {string} id
+ * @property {string} _id
  * @property {string} title
  * @property {string} description
  * @property {number} progress
@@ -28,14 +29,22 @@ import { Calendar, Users } from 'lucide-react';
  */
 const ProjectCard = ({
   id,
+  _id,
   title,
   description,
-  progress,
-  members,
+  progress = 0,
+  members = [],
   dueDate,
   index = 0
 }) => {
+  // Ensure we have a valid project ID
+  const projectId = id || _id;
+  
+  // Ensure members is always an array
+  const membersList = Array.isArray(members) ? members : [];
+  
   const formatDate = (dateString) => {
+    if (!dateString) return 'Not set';
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
@@ -48,7 +57,7 @@ const ProjectCard = ({
       whileHover={{ y: -5, boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)' }}
       className="bg-[#222222] rounded-lg overflow-hidden border border-[#333333] hover:border-[#1DCD9F]/50 transition-all duration-300"
     >
-      <Link to={`/project/${id}`} className="block h-full">
+      <Link to={`/projects/${projectId}`} className="block h-full">
         <div className="p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-xl font-semibold text-white">{title}</h3>
@@ -67,24 +76,32 @@ const ProjectCard = ({
             
             <div className="flex items-center text-white/60 text-sm">
               <Users size={16} className="mr-1" />
-              <span>{members.length} members</span>
+              <span>{membersList.length} members</span>
             </div>
           </div>
           
           <div className="flex justify-between items-center">
             <div className="flex -space-x-2">
-              {members.slice(0, 3).map((member) => (
-                <img
-                  key={member.id}
-                  src={member.avatar}
-                  alt={member.name}
-                  className="w-8 h-8 rounded-full border-2 border-[#222222]"
-                  title={member.name}
-                />
-              ))}
-              {members.length > 3 && (
-                <div className="w-8 h-8 rounded-full bg-[#333333] border-2 border-[#222222] flex items-center justify-center text-xs text-white">
-                  +{members.length - 3}
+              {membersList.length > 0 ? (
+                <>
+                  {membersList.slice(0, 3).map((member) => (
+                    <img
+                      key={member.id || member.userId || member._id || Math.random().toString()}
+                      src={member.avatar || member.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name || 'User')}&background=1A1A1A&color=FFFFFF`}
+                      alt={member.name || 'Team member'}
+                      className="w-8 h-8 rounded-full border-2 border-[#222222]"
+                      title={member.name || 'Team member'}
+                    />
+                  ))}
+                  {membersList.length > 3 && (
+                    <div className="w-8 h-8 rounded-full bg-[#333333] border-2 border-[#222222] flex items-center justify-center text-xs text-white">
+                      +{membersList.length - 3}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-[#333333] border-2 border-[#222222] flex items-center justify-center">
+                  <Users size={14} className="text-white/70" />
                 </div>
               )}
             </div>

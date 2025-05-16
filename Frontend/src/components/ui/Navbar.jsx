@@ -5,6 +5,7 @@ import { Menu, X, Activity, LogOut } from 'lucide-react';
 import Button from './Button';
 import { getCurrentUser } from '../../services/userService';
 import { auth } from '../../firebase/config';
+import { logout } from '../../services/authService';
 
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -65,7 +66,7 @@ const Navbar = () => {
   
   const handleLogout = async () => {
     try {
-      await auth.signOut();
+      await logout();
       navigate('/login');
     } catch (error) {
       console.error('Error signing out:', error);

@@ -81,4 +81,34 @@ router.get('/me/stats', authenticateToken, async (req, res) => {
   }
 });
 
+// Search users by email
+router.get('/search', authenticateToken, async (req, res) => {
+  try {
+    const { email } = req.query;
+    
+    if (!email) {
+      return res.status(400).json({ message: 'Email query parameter is required' });
+    }
+    
+    // Find users that match or partially match the email
+    const users = await User.find({ 
+      email: { $regex: email, $options: 'i' } 
+    }).limit(10);
+    
+    // Return users with limited fields for security
+    const safeUsers = users.map(user => ({
+      id: user._id,
+      uid: user.uid,
+      name: user.name,
+      email: user.email,
+      photoURL: user.photoURL
+    }));
+    
+    res.status(200).json(safeUsers);
+  } catch (error) {
+    console.error('Error searching users:', error);
+    res.status(500).json({ message: 'Error searching users', error: error.message });
+  }
+});
+
 export default router;

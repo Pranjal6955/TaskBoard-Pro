@@ -18,10 +18,34 @@ const ProjectPage = () => {
   
   useEffect(() => {
     const fetchProjectData = async () => {
+      if (!id) {
+        setError("Invalid project ID. Redirecting to dashboard...");
+        setTimeout(() => navigate('/dashboard'), 2000);
+        return;
+      }
+      
       try {
         setIsLoading(true);
         const projectData = await getProjectById(id);
-        setProject(projectData);
+        
+        // Format project data to ensure consistent structure
+        const formattedProject = {
+          ...projectData,
+          id: projectData._id || projectData.id, // Ensure we have id available
+          _id: projectData._id || projectData.id, // Ensure we have _id available
+          // Standardize members format for the ProjectHeader component
+          members: (projectData.members || []).map(member => ({
+            id: member.userId || member._id || member.id,
+            userId: member.userId || member._id || member.id,
+            name: member.name || (member.email ? member.email.split('@')[0] : 'User'),
+            email: member.email || '',
+            avatar: member.photoURL || member.avatar || 
+              `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name || member.email || 'User')}&background=1A1A1A&color=FFFFFF`,
+            role: member.role || 'member'
+          }))
+        };
+        
+        setProject(formattedProject);
         
         const tasksData = await getProjectTasks(id);
         setTasks(tasksData);
@@ -40,7 +64,7 @@ const ProjectPage = () => {
     };
     
     fetchProjectData();
-  }, [id]);
+  }, [id, navigate]);
   
   if (isLoading) {
     return (
@@ -102,10 +126,10 @@ const ProjectPage = () => {
       <Navbar />
       
       <main className="pt-16">
-        <ProjectHeader project={project} />
+        <ProjectHeader project={project} onProjectUpdated={(updatedProject) => setProject(updatedProject)} />
         
         <div className="container mx-auto px-4 py-6">
-          <KanbanBoard projectId={id} initialTasks={tasks} />
+          <KanbanBoard projectId={id} initialTasks={tasks || []} />
         </div>
       </main>
     </div>

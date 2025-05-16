@@ -3,11 +3,8 @@ import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import Button from '../components/ui/Button';
 import { Activity } from 'lucide-react';
-import { 
-  GoogleAuthProvider, 
-  signInWithPopup 
-} from 'firebase/auth';
-import { auth } from '../firebase/config';
+import { loginWithGoogle } from '../services/authService';
+import { registerUserAfterGoogleLogin } from '../services/userService';
 
 const LoginPage = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -19,12 +16,21 @@ const LoginPage = () => {
     setError('');
     
     try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      const user = await loginWithGoogle();
+      
+      // Register user with backend and get JWT token
+      await registerUserAfterGoogleLogin(user);
+      
       navigate('/dashboard');
     } catch (error) {
       console.error('Google login error:', error);
-      setError(error.message.replace('Firebase: ', ''));
+      if (error.code === 'auth/network-request-failed') {
+        setError('Network error. Please check your connection.');
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        setError('Login cancelled. Please try again.');
+      } else {
+        setError(error.message?.replace('Firebase: ', '') || 'Login failed. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }

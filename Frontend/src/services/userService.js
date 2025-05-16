@@ -1,4 +1,5 @@
 import api from './api';
+import { registerWithBackend } from './authService';
 
 // Get current user profile
 export const getCurrentUser = async () => {
@@ -28,4 +29,41 @@ export const getUserStats = async () => {
 export const getUsersByEmail = async (email) => {
   const response = await api.get(`/users/search?email=${email}`);
   return response.data;
+};
+
+// Send user data to backend after Firebase auth
+export const registerUserAfterGoogleLogin = async (user) => {
+  try {
+    // First get a JWT token from our backend
+    const { token } = await registerWithBackend(user);
+    
+    // Store token in localStorage for future requests
+    localStorage.setItem('authToken', token);
+    
+    // Now use the JWT token for user creation/update
+    const userData = {
+      uid: user.uid,
+      email: user.email,
+      name: user.displayName || user.email.split('@')[0],
+      photoURL: user.photoURL || '',
+    };
+
+    const response = await createOrUpdateUser(userData);
+    console.log('User registered in database:', response);
+    return response;
+  } catch (error) {
+    console.error('Error registering user in database:', error);
+    throw error;
+  }
+};
+
+// Verify connection between frontend and backend
+export const verifyApiConnection = async () => {
+  try {
+    const response = await api.get('/health');
+    return response.data;
+  } catch (error) {
+    console.error('API connection error:', error);
+    throw error;
+  }
 };

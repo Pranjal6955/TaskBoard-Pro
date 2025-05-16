@@ -1,32 +1,41 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
-import { Calendar, Tag, AlertCircle } from 'lucide-react';
+import { Calendar, Tag, AlertCircle, User } from 'lucide-react';
 
 const AddTaskModal = ({
   isOpen,
   onClose,
   onTaskCreated,
-  columnType
+  columnType,
+  teamMembers = [] // Add this prop with default empty array
 }) => {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     priority: 'medium',
     dueDate: '',
-    assigneeId: '1',
+    assigneeId: '',
     labels: []
   });
   
+  // Add this effect to update assigneeId when teamMembers changes
+  useEffect(() => {
+    if (teamMembers && teamMembers.length > 0) {
+      setFormData(prev => ({
+        ...prev,
+        assigneeId: prev.assigneeId || teamMembers[0].id || teamMembers[0].userId || ''
+      }));
+    }
+  }, [teamMembers]);
+
   const [isLoading, setIsLoading] = useState(false);
   
-  const teamMembers = [
-    { id: '1', name: 'Alex Johnson', avatar: 'https://i.pravatar.cc/150?img=1' },
-    { id: '2', name: 'Maya Patel', avatar: 'https://i.pravatar.cc/150?img=5' },
-    { id: '3', name: 'David Kim', avatar: 'https://i.pravatar.cc/150?img=3' },
-    { id: '4', name: 'Sarah Lee', avatar: 'https://i.pravatar.cc/150?img=4' }
-  ];
-  
+  // Debug log to check what's coming in
+  useEffect(() => {
+    console.log("TeamMembers in AddTaskModal:", teamMembers);
+  }, [teamMembers]);
+
   const availableLabels = [
     'design', 'development', 'marketing', 'research', 'testing', 'planning', 'ui/ux', 'backend', 'frontend'
   ];
@@ -56,7 +65,9 @@ const AddTaskModal = ({
     
     // Mock API call delay
     setTimeout(() => {
-      const assignee = teamMembers.find(member => member.id === formData.assigneeId);
+      const assignee = teamMembers.find(member => 
+        member.id === formData.assigneeId || member.userId === formData.assigneeId
+      );
       
       const newTask = {
         id: `task-${Math.floor(Math.random() * 1000)}`,
@@ -73,7 +84,7 @@ const AddTaskModal = ({
         description: '',
         priority: 'medium',
         dueDate: '',
-        assigneeId: '1',
+        assigneeId: teamMembers.length > 0 ? teamMembers[0].id || teamMembers[0].userId : '',
         labels: []
       });
       
@@ -184,26 +195,35 @@ const AddTaskModal = ({
           <label htmlFor="assigneeId" className="block text-sm font-medium text-white/80 mb-2">
             Assignee
           </label>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            {teamMembers.map((member) => (
-              <div
-                key={member.id}
-                onClick={() => setFormData(prev => ({ ...prev, assigneeId: member.id }))}
-                className={`flex flex-col items-center p-2 border ${
-                  formData.assigneeId === member.id
-                    ? 'border-[#1DCD9F] bg-[#1DCD9F]/10'
-                    : 'border-[#333333] bg-[#1A1A1A]'
-                } rounded-md cursor-pointer transition-all duration-200`}
-              >
-                <img
-                  src={member.avatar}
-                  alt={member.name}
-                  className="w-10 h-10 rounded-full mb-1"
-                />
-                <span className="text-white text-xs text-center truncate w-full">{member.name}</span>
-              </div>
-            ))}
-          </div>
+          
+          {teamMembers.length > 0 ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {teamMembers.map((member) => (
+                <div
+                  key={member.id || member.userId}
+                  onClick={() => setFormData(prev => ({ ...prev, assigneeId: member.id || member.userId }))}
+                  className={`flex flex-col items-center p-2 border ${
+                    formData.assigneeId === (member.id || member.userId)
+                      ? 'border-[#1DCD9F] bg-[#1DCD9F]/10'
+                      : 'border-[#333333] bg-[#1A1A1A]'
+                  } rounded-md cursor-pointer transition-all duration-200`}
+                >
+                  <img
+                    src={member.avatar || member.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name || member.email)}&background=1A1A1A&color=FFFFFF`}
+                    alt={member.name || member.email}
+                    className="w-10 h-10 rounded-full mb-1"
+                  />
+                  <span className="text-white text-xs text-center truncate w-full">{member.name || member.email}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center p-4 bg-[#1A1A1A] border border-[#333333] rounded-md">
+              <User size={20} className="mx-auto text-white/40 mb-2" />
+              <p className="text-white/70">No team members available for assignment.</p>
+              <p className="text-white/50 text-xs mt-1">Invite members to your project first.</p>
+            </div>
+          )}
         </div>
         
         <div>

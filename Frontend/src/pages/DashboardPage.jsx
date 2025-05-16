@@ -38,8 +38,17 @@ const DashboardPage = () => {
     setIsLoading(true);
     try {
       const newProject = await createProject(projectData);
-      setProjectsList(prev => [newProject, ...prev]);
-      setFilteredProjects(prev => [newProject, ...prev]);
+      
+      // Ensure the project has the expected structure with both id and _id
+      const formattedProject = {
+        ...newProject,
+        id: newProject._id || newProject.id, // Ensure we have id available
+        _id: newProject._id || newProject.id, // Ensure we have _id available
+        members: newProject.members || []
+      };
+      
+      setProjectsList(prev => [formattedProject, ...prev]);
+      setFilteredProjects(prev => [formattedProject, ...prev]);
       setIsCreateModalOpen(false);
       setError(null);
     } catch (err) {

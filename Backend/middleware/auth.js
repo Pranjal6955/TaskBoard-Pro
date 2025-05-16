@@ -1,6 +1,7 @@
+import admin from 'firebase-admin';
 import jwt from 'jsonwebtoken';
 
-export const authenticateToken = (req, res, next) => {
+export const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -9,7 +10,23 @@ export const authenticateToken = (req, res, next) => {
   }
 
   try {
-    // Verify JWT token
+    // First try to verify as a Firebase token
+    try {
+      // If Firebase admin is properly initialized
+      if (admin.apps.length) {
+        const decodedFirebase = await admin.auth().verifyIdToken(token);
+        req.user = {
+          uid: decodedFirebase.uid,
+          email: decodedFirebase.email,
+          name: decodedFirebase.name || decodedFirebase.email?.split('@')[0]
+        };
+        return next();
+      }
+    } catch (firebaseError) {
+      console.log('Not a valid Firebase token, trying JWT');
+    }
+
+    // If not a Firebase token or Firebase admin not initialized, try as JWT
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;
     next();
