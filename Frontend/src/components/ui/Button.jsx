@@ -18,7 +18,9 @@ const Button = ({
     primary: 'bg-[#169976] hover:bg-[#1DCD9F] text-white shadow-sm',
     secondary: 'bg-[#1DCD9F] hover:bg-[#169976] text-white shadow-sm',
     outline: 'bg-transparent border border-[#1DCD9F] text-[#1DCD9F] hover:bg-[#1DCD9F]/10',
-    text: 'bg-transparent text-[#1DCD9F] hover:text-[#169976] hover:bg-[#1DCD9F]/10'
+    text: 'bg-transparent text-[#1DCD9F] hover:text-[#169976] hover:bg-[#1DCD9F]/10',
+    danger: 'bg-red-600 hover:bg-red-700 text-white shadow-sm',
+    ghost: 'bg-transparent hover:bg-white/5 text-white/70 hover:text-white'
   };
   
   const sizes = {
