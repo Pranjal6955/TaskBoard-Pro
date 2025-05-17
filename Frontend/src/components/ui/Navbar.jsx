@@ -6,6 +6,8 @@ import Button from './Button';
 import { getCurrentUser } from '../../services/userService';
 import { auth } from '../../firebase/config';
 import { logout } from '../../services/authService';
+import HomeNavbar from './HomeNavbar';
+import DashboardNavbar from './DashboardNavbar';
 
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -14,6 +16,16 @@ const Navbar = () => {
   const [isLoading, setIsLoading] = useState(true);
   const location = useLocation();
   const navigate = useNavigate();
+  
+  // If we're on the homepage, render the special HomeNavbar component
+  if (location.pathname === '/') {
+    return <HomeNavbar />;
+  }
+  
+  // If we're on any dashboard route, render the special DashboardNavbar component
+  if (location.pathname.startsWith('/dashboard')) {
+    return <DashboardNavbar />;
+  }
   
   useEffect(() => {
     const handleScroll = () => {
