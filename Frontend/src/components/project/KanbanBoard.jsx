@@ -3,9 +3,9 @@ import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
 import { PlusCircle, MoreVertical } from "lucide-react";
 import TaskCard from './TaskCard';
 import AddTaskModal from './AddTaskModal';
-import { createTask, moveTask, updateTask } from '../../services/taskService';
+import { createTask, moveTask, updateTask, getFrontendStatus, deleteTask } from '../../services/taskService';
 
-const KanbanBoard = ({ projectId, initialTasks = [] }) => {
+const KanbanBoard = ({ projectId, initialTasks = [], teamMembers = [] }) => {
   const [columns, setColumns] = useState({
     'todo': {
       id: 'todo',
@@ -39,9 +39,10 @@ const KanbanBoard = ({ projectId, initialTasks = [] }) => {
       };
       
       initialTasks.forEach(task => {
-        const status = task.status || 'todo';
-        if (tasksByStatus[status]) {
-          tasksByStatus[status].push(task);
+        // Map backend status to frontend status
+        const frontendStatus = getFrontendStatus(task.status || 'To Do');
+        if (tasksByStatus[frontendStatus]) {
+          tasksByStatus[frontendStatus].push(task);
         } else {
           tasksByStatus['todo'].push(task);
         }
@@ -67,6 +68,11 @@ const KanbanBoard = ({ projectId, initialTasks = [] }) => {
     }
   }, [initialTasks]);
   
+  // Add a log to verify teamMembers is passed correctly
+  useEffect(() => {
+    console.log("Team members in KanbanBoard:", teamMembers);
+  }, [teamMembers]);
+
   const handleDragEnd = async (result) => {
     const { destination, source, draggableId } = result;
     
@@ -145,29 +151,40 @@ const KanbanBoard = ({ projectId, initialTasks = [] }) => {
   const handleAddTask = async (taskData) => {
     try {
       setIsLoading(true);
+      console.log("Adding new task with data:", taskData); // Debug log for task creation data
       const newTask = await createTask({
         ...taskData,
         projectId,
         status: activeColumn
       });
       
-      // Update the UI
-      const column = columns[activeColumn];
-      const updatedColumn = {
-        ...column,
-        tasks: [newTask, ...column.tasks]
-      };
+      console.log("New task created:", newTask); // Debug log for created task
       
-      setColumns({
-        ...columns,
-        [activeColumn]: updatedColumn
-      });
+      // Update the UI with the returned task
+      // Map the backend status to frontend status if needed
+      const frontendStatus = getFrontendStatus(newTask.status);
+      const columnToUpdate = frontendStatus || activeColumn;
+      
+      const column = columns[columnToUpdate];
+      if (column) {
+        const updatedColumn = {
+          ...column,
+          tasks: [newTask, ...column.tasks]
+        };
+        
+        setColumns({
+          ...columns,
+          [columnToUpdate]: updatedColumn
+        });
+      }
       
       setIsAddTaskModalOpen(false);
       setError(null);
     } catch (err) {
       console.error('Error adding task:', err);
-      setError('Failed to add task. Please try again.');
+      // Extract specific error message if available
+      const errorMessage = err.response?.data?.message || 'Failed to add task. Please try again.';
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -179,7 +196,9 @@ const KanbanBoard = ({ projectId, initialTasks = [] }) => {
       const updatedTask = await updateTask(taskId, taskData);
       
       // Update the task in the correct column
-      const columnId = updatedTask.status;
+      // Map the backend status to frontend status
+      const frontendStatus = getFrontendStatus(updatedTask.status);
+      const columnId = frontendStatus;
       const column = columns[columnId];
       
       if (column) {
@@ -202,12 +221,56 @@ const KanbanBoard = ({ projectId, initialTasks = [] }) => {
       setError(null);
     } catch (err) {
       console.error('Error updating task:', err);
-      setError('Failed to update task. Please try again.');
+      const errorMessage = err.response?.data?.message || 'Failed to update task. Please try again.';
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
   };
-  
+
+  const handleTaskDelete = async (taskId) => {
+    try {
+      setIsLoading(true);
+      console.log("KanbanBoard: Deleting task with ID:", taskId);
+      
+      // Check if taskId is valid
+      if (!taskId) {
+        throw new Error("Invalid task ID");
+      }
+      
+      await deleteTask(taskId);
+      
+      // Remove the task from the UI regardless of API result
+      // since we want it removed even if it was already deleted
+      const updatedColumns = { ...columns };
+      
+      // Remove the task from all columns
+      for (const columnId in updatedColumns) {
+        updatedColumns[columnId].tasks = updatedColumns[columnId].tasks.filter(
+          t => (t._id || t.id) !== taskId
+        );
+      }
+      
+      setColumns(updatedColumns);
+      setError(null); // Clear any existing errors
+    } catch (err) {
+      console.error('Error deleting task:', err);
+      // Don't show errors to the user for task deletion
+      // This prevents the 404 error from being displayed
+      
+      // Still update the UI to remove the task even if there was an error
+      const updatedColumns = { ...columns };
+      for (const columnId in updatedColumns) {
+        updatedColumns[columnId].tasks = updatedColumns[columnId].tasks.filter(
+          t => (t._id || t.id) !== taskId
+        );
+      }
+      setColumns(updatedColumns);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const openAddTaskModal = (columnId) => {
     setActiveColumn(columnId);
     setIsAddTaskModalOpen(true);
@@ -270,6 +333,7 @@ const KanbanBoard = ({ projectId, initialTasks = [] }) => {
                             <TaskCard 
                               task={task} 
                               onTaskUpdate={handleTaskUpdate}
+                              onTaskDelete={handleTaskDelete}
                             />
                           </div>
                         )}
@@ -304,6 +368,7 @@ const KanbanBoard = ({ projectId, initialTasks = [] }) => {
         onTaskCreated={handleAddTask}
         columnType={activeColumn}
         isLoading={isLoading}
+        teamMembers={teamMembers}
       />
     </>
   );

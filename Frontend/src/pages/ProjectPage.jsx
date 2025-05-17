@@ -129,7 +129,11 @@ const ProjectPage = () => {
         <ProjectHeader project={project} onProjectUpdated={(updatedProject) => setProject(updatedProject)} />
         
         <div className="container mx-auto px-4 py-6">
-          <KanbanBoard projectId={id} initialTasks={tasks || []} />
+          <KanbanBoard 
+            projectId={id} 
+            initialTasks={tasks || []} 
+            teamMembers={project.members || []} 
+          />
         </div>
       </main>
     </div>

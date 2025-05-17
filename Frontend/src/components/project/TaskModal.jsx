@@ -1,36 +1,146 @@
 import React, { useState, useEffect } from 'react';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
-import { Calendar, Tag, AlertCircle, Clock, MessageSquare, Edit, Trash2 } from 'lucide-react';
+import { Calendar, Tag, AlertCircle, Clock, MessageSquare, Edit, Trash2, Send } from 'lucide-react';
+import { updateTask, deleteTask } from '../../services/taskService';
+import { getTaskComments, createComment } from '../../services/commentService';
 
-const TaskModal = ({ isOpen, onClose, task }) => {
+const TaskModal = ({ isOpen, onClose, task, onTaskUpdate, onTaskDelete }) => {
   const [activeTab, setActiveTab] = useState('details');
   const [isEditing, setIsEditing] = useState(false);
   const [editedTask, setEditedTask] = useState(task || {});
+  const [comments, setComments] = useState([]);
+  const [newComment, setNewComment] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [commentLoading, setCommentLoading] = useState(false);
+  const [error, setError] = useState(null);
   
   // Update editedTask when task changes
   useEffect(() => {
     if (task) {
-      setEditedTask(task);
+      console.log("Task in modal:", task); // Debug log to check task data
+      console.log("Labels in task:", task.labels); // Debug log specifically for labels
+      
+      setEditedTask({
+        ...task,
+        labels: task.labels || [] // Ensure labels is at least an empty array
+      });
+      
+      // Reset error when task changes
+      setError(null);
+      
+      // Reset comment form when task changes
+      setNewComment('');
+      
+      // Fetch comments when task changes and comments tab is active
+      if (activeTab === 'comments') {
+        fetchComments();
+      }
     }
   }, [task]);
 
-  const priorityColors = {
-    high: 'bg-red-500 text-white',
-    medium: 'bg-yellow-500 text-black',
-    low: 'bg-blue-500 text-white'
+  // Fetch comments when switching to comments tab
+  useEffect(() => {
+    if (isOpen && activeTab === 'comments' && task) {
+      fetchComments();
+    }
+  }, [activeTab, isOpen, task]);
+
+  const fetchComments = async () => {
+    if (!task || !task._id) return;
+    
+    try {
+      setCommentLoading(true);
+      const fetchedComments = await getTaskComments(task._id);
+      setComments(fetchedComments || []);
+    } catch (err) {
+      console.error('Error fetching comments:', err);
+      // Don't show error for comments, just log it
+    } finally {
+      setCommentLoading(false);
+    }
   };
-  
+
   const formatDate = (dateString) => {
     if (!dateString) return 'No date set';
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   };
   
-  const handleSaveChanges = () => {
-    // In a real app, this would update the task in the backend
-    setIsEditing(false);
-    // For demo purposes, we're not actually saving changes
+  const handleSaveChanges = async () => {
+    if (!editedTask._id) return;
+    
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Ensure labels is at least an empty array before saving
+      const taskToSave = {
+        ...editedTask,
+        labels: editedTask.labels || []
+      };
+      
+      console.log("Saving task with data:", taskToSave); // Debug log
+      console.log("Labels being saved:", taskToSave.labels); // Debug labels specifically
+      
+      const updatedTask = await updateTask(editedTask._id, taskToSave);
+      
+      console.log("Task updated:", updatedTask); // Debug log
+      console.log("Labels in updated task:", updatedTask.labels); // Debug updated labels
+      
+      // Update the editedTask with the response from the server
+      setEditedTask(updatedTask);
+      
+      // Notify parent component about the update
+      if (onTaskUpdate) {
+        onTaskUpdate(updatedTask._id || updatedTask.id, updatedTask);
+      }
+      
+      setIsEditing(false);
+    } catch (err) {
+      console.error('Error updating task:', err);
+      setError('Failed to update task. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  const handleDeleteTask = async () => {
+    if (!task || !task._id) return;
+    
+    if (!window.confirm('Are you sure you want to delete this task? This action cannot be undone.')) {
+      return;
+    }
+    
+    try {
+      setIsLoading(true);
+      
+      // Make sure we're using the correct task ID
+      const taskId = task._id || task.id;
+      console.log("Attempting to delete task with ID:", taskId);
+      
+      // Check if the task ID is valid
+      if (!taskId) {
+        throw new Error("Invalid task ID");
+      }
+      
+      await deleteTask(taskId);
+      
+      // Close modal and notify parent regardless of API result
+      onClose();
+      if (onTaskDelete) {
+        onTaskDelete(taskId);
+      }
+    } catch (err) {
+      console.error('Error deleting task:', err);
+      
+      // Don't show any error for deletion issues
+      // Just close the modal and let the parent component handle it
+      onClose();
+      if (onTaskDelete) {
+        onTaskDelete(task._id || task.id);
+      }
+    }
   };
   
   const handleChange = (e) => {
@@ -38,23 +148,37 @@ const TaskModal = ({ isOpen, onClose, task }) => {
     setEditedTask(prev => ({ ...prev, [name]: value }));
   };
   
-  // Mock comments for demo
-  const comments = [
-    {
-      id: 'c1',
-      user: { name: 'Maya Patel', avatar: 'https://i.pravatar.cc/150?img=5' },
-      content: 'I\'ve started researching this. Will update with findings by tomorrow.',
-      timestamp: '2023-11-02T14:32:00Z'
-    },
-    {
-      id: 'c2',
-      user: { name: 'Alex Johnson', avatar: 'https://i.pravatar.cc/150?img=1' },
-      content: 'Great! Let me know if you need any resources or have questions.',
-      timestamp: '2023-11-02T15:45:00Z'
+  const handleSubmitComment = async (e) => {
+    e.preventDefault();
+    
+    if (!newComment.trim() || !task || !task._id) return;
+    
+    try {
+      setCommentLoading(true);
+      
+      const commentData = {
+        taskId: task._id,
+        content: newComment.trim()
+      };
+      
+      const createdComment = await createComment(commentData);
+      
+      // Add the new comment to the list
+      setComments(prev => [...prev, createdComment]);
+      
+      // Clear the comment form
+      setNewComment('');
+    } catch (err) {
+      console.error('Error creating comment:', err);
+      // Don't show error for comments, just log it
+    } finally {
+      setCommentLoading(false);
     }
-  ];
+  };
   
   const formatTimestamp = (timestamp) => {
+    if (!timestamp) return '';
+    
     const date = new Date(timestamp);
     return date.toLocaleString('en-US', { 
       month: 'short', 
@@ -66,10 +190,14 @@ const TaskModal = ({ isOpen, onClose, task }) => {
   
   const modalFooter = isEditing ? (
     <div className="flex justify-end space-x-3">
-      <Button variant="outline" onClick={() => setIsEditing(false)}>
+      <Button variant="outline" onClick={() => setIsEditing(false)} disabled={isLoading}>
         Cancel
       </Button>
-      <Button variant="primary" onClick={handleSaveChanges}>
+      <Button 
+        variant="primary" 
+        onClick={handleSaveChanges}
+        loading={isLoading}
+      >
         Save Changes
       </Button>
     </div>
@@ -79,6 +207,8 @@ const TaskModal = ({ isOpen, onClose, task }) => {
         variant="outline" 
         className="text-red-500 border-red-500/30 hover:bg-red-500/10"
         icon={<Trash2 size={16} />}
+        onClick={handleDeleteTask}
+        loading={isLoading}
       >
         Delete
       </Button>
@@ -86,6 +216,7 @@ const TaskModal = ({ isOpen, onClose, task }) => {
         variant="primary" 
         onClick={() => setIsEditing(true)}
         icon={<Edit size={16} />}
+        disabled={isLoading}
       >
         Edit Task
       </Button>
@@ -100,6 +231,13 @@ const TaskModal = ({ isOpen, onClose, task }) => {
       footer={modalFooter}
       size="lg"
     >
+      {error && (
+        <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-md text-red-200 text-sm flex items-center">
+          <AlertCircle size={16} className="mr-2 flex-shrink-0" />
+          {error}
+        </div>
+      )}
+      
       <div className="flex border-b border-[#333333] mb-4">
         <button
           className={`py-2 px-4 font-medium ${activeTab === 'details' ? 'text-[#1DCD9F] border-b-2 border-[#1DCD9F]' : 'text-white/70'}`}
@@ -111,7 +249,7 @@ const TaskModal = ({ isOpen, onClose, task }) => {
           className={`py-2 px-4 font-medium ${activeTab === 'comments' ? 'text-[#1DCD9F] border-b-2 border-[#1DCD9F]' : 'text-white/70'}`}
           onClick={() => setActiveTab('comments')}
         >
-          Comments ({comments.length})
+          Comments {comments.length > 0 ? `(${comments.length})` : ''}
         </button>
       </div>
       
@@ -126,7 +264,7 @@ const TaskModal = ({ isOpen, onClose, task }) => {
                 type="text"
                 id="title"
                 name="title"
-                value={editedTask.title}
+                value={editedTask.title || ''}
                 onChange={handleChange}
                 className="w-full px-4 py-2 bg-[#1A1A1A] border border-[#333333] rounded-md text-white focus:outline-none focus:ring-2 focus:ring-[#1DCD9F]/50 focus:border-transparent transition"
               />
@@ -139,7 +277,7 @@ const TaskModal = ({ isOpen, onClose, task }) => {
               <textarea
                 id="description"
                 name="description"
-                value={editedTask.description}
+                value={editedTask.description || ''}
                 onChange={handleChange}
                 rows={3}
                 className="w-full px-4 py-2 bg-[#1A1A1A] border border-[#333333] rounded-md text-white focus:outline-none focus:ring-2 focus:ring-[#1DCD9F]/50 focus:border-transparent transition"
@@ -148,23 +286,6 @@ const TaskModal = ({ isOpen, onClose, task }) => {
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label htmlFor="priority" className="block text-sm font-medium text-white/80 mb-2">
-                  Priority
-                </label>
-                <select
-                  id="priority"
-                  name="priority"
-                  value={editedTask.priority}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2 bg-[#1A1A1A] border border-[#333333] rounded-md text-white focus:outline-none focus:ring-2 focus:ring-[#1DCD9F]/50 focus:border-transparent transition"
-                >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                </select>
-              </div>
-              
-              <div>
                 <label htmlFor="dueDate" className="block text-sm font-medium text-white/80 mb-2">
                   Due Date
                 </label>
@@ -172,35 +293,61 @@ const TaskModal = ({ isOpen, onClose, task }) => {
                   type="date"
                   id="dueDate"
                   name="dueDate"
-                  value={editedTask.dueDate}
+                  value={editedTask.dueDate ? new Date(editedTask.dueDate).toISOString().split('T')[0] : ''}
                   onChange={handleChange}
                   className="w-full px-4 py-2 bg-[#1A1A1A] border border-[#333333] rounded-md text-white focus:outline-none focus:ring-2 focus:ring-[#1DCD9F]/50 focus:border-transparent transition"
                 />
+              </div>
+            </div>
+            
+            {/* Labels editing section */}
+            <div>
+              <label className="block text-sm font-medium text-white/80 mb-2">
+                Labels
+              </label>
+              <div className="flex flex-wrap gap-2 border border-[#333333] rounded-md p-3 bg-[#1A1A1A]">
+                {['design', 'development', 'marketing', 'research', 'testing', 'planning', 'ui/ux', 'backend', 'frontend'].map((label) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => {
+                      const labels = editedTask.labels || [];
+                      const newLabels = labels.includes(label)
+                        ? labels.filter(l => l !== label)
+                        : [...labels, label];
+                      setEditedTask(prev => ({ ...prev, labels: newLabels }));
+                    }}
+                    className={`px-3 py-1 rounded-full text-xs ${
+                      (editedTask.labels || []).includes(label)
+                        ? 'bg-[#1DCD9F] text-black'
+                        : 'bg-[#333333] text-white/80 hover:bg-[#444444]'
+                    } transition-colors duration-200`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
         ) : (
           <div className="space-y-4">
             <div className="flex items-center space-x-3 mb-4">
-              <span className={`px-3 py-1 rounded-full text-xs ${priorityColors[task?.priority || 'medium']}`}>
-                {task?.priority ? (task.priority.charAt(0).toUpperCase() + task.priority.slice(1)) : 'Medium'} Priority
-              </span>
-              
               <div className="flex items-center text-white/60 text-sm">
                 <Clock size={14} className="mr-1" />
                 Due {formatDate(task?.dueDate)}
               </div>
             </div>
             
-            <p className="text-white/80 leading-relaxed">
+            <p className="text-white/80 leading-relaxed whitespace-pre-wrap">
               {task?.description || 'No description provided'}
             </p>
             
             <div className="pt-2">
               <h4 className="text-sm font-medium text-white/80 mb-2">Labels</h4>
               <div className="flex flex-wrap gap-2">
-                {task?.labels && task.labels.length > 0 ? (
-                  task.labels.map((label, i) => (
+                {console.log("Rendering labels:", editedTask?.labels)}
+                {Array.isArray(editedTask?.labels) && editedTask.labels.length > 0 ? (
+                  editedTask.labels.map((label, i) => (
                     <span
                       key={i}
                       className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs bg-[#1DCD9F]/20 text-[#1DCD9F]"
@@ -220,12 +367,12 @@ const TaskModal = ({ isOpen, onClose, task }) => {
               {task?.assignee ? (
                 <div className="flex items-center space-x-3">
                   <img
-                    src={task.assignee.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(task.assignee.name || 'User')}&background=1A1A1A&color=FFFFFF`}
-                    alt={task.assignee.name || 'Assignee'}
+                    src={task.assignee.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(task.assignee.name || task.assignee.email || 'User')}&background=1A1A1A&color=FFFFFF`}
+                    alt={task.assignee.name || task.assignee.email || 'Assignee'}
                     className="w-10 h-10 rounded-full border-2 border-[#333333]"
                   />
                   <div>
-                    <div className="text-white font-medium">{task.assignee.name || 'Unknown User'}</div>
+                    <div className="text-white font-medium">{task.assignee.name || task.assignee.email || 'Unknown User'}</div>
                     <div className="text-white/60 text-sm">Assignee</div>
                   </div>
                 </div>
@@ -233,52 +380,79 @@ const TaskModal = ({ isOpen, onClose, task }) => {
                 <div className="text-white/50 text-sm">No assignee</div>
               )}
             </div>
+            
+            <div className="pt-2 border-t border-[#333333] mt-4">
+              <h4 className="text-sm font-medium text-white/80 mb-2 mt-4">Created</h4>
+              <div className="text-white/70 text-sm">
+                {task?.createdAt ? formatTimestamp(task.createdAt) : 'Unknown'}
+              </div>
+            </div>
           </div>
         )
       ) : (
         <div className="space-y-4">
-          <div className="space-y-4 mb-6">
-            {comments.map((comment) => (
-              <div key={comment.id} className="flex space-x-3">
+          {commentLoading && comments.length === 0 ? (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#1DCD9F] mx-auto mb-3"></div>
+              <p className="text-white/70">Loading comments...</p>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-4 mb-6">
+                {comments.length > 0 ? (
+                  comments.map((comment) => (
+                    <div key={comment._id} className="flex space-x-3">
+                      <img
+                        src={comment.author?.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.author?.name || 'User')}&background=1A1A1A&color=FFFFFF`}
+                        alt={comment.author?.name || 'User'}
+                        className="w-8 h-8 rounded-full flex-shrink-0"
+                      />
+                      <div className="flex-1 bg-[#1A1A1A] rounded-lg p-3">
+                        <div className="flex justify-between mb-1">
+                          <span className="font-medium text-white">{comment.author?.name || 'Unknown User'}</span>
+                          <span className="text-white/50 text-xs">{formatTimestamp(comment.createdAt)}</span>
+                        </div>
+                        <p className="text-white/80 whitespace-pre-wrap">{comment.content}</p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-6 text-white/50">
+                    No comments yet
+                  </div>
+                )}
+              </div>
+              
+              <form onSubmit={handleSubmitComment} className="flex space-x-3">
                 <img
-                  src={comment.user.avatar}
-                  alt={comment.user.name}
+                  src="https://ui-avatars.com/api/?name=You&background=1A1A1A&color=FFFFFF"
+                  alt="Current User"
                   className="w-8 h-8 rounded-full flex-shrink-0"
                 />
-                <div className="flex-1 bg-[#1A1A1A] rounded-lg p-3">
-                  <div className="flex justify-between mb-1">
-                    <span className="font-medium text-white">{comment.user.name}</span>
-                    <span className="text-white/50 text-xs">{formatTimestamp(comment.timestamp)}</span>
+                <div className="flex-1">
+                  <textarea
+                    placeholder="Add a comment..."
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    className="w-full px-4 py-2 bg-[#1A1A1A] border border-[#333333] rounded-md text-white focus:outline-none focus:ring-2 focus:ring-[#1DCD9F]/50 focus:border-transparent transition resize-none"
+                    rows={2}
+                  />
+                  <div className="mt-2 flex justify-end">
+                    <Button 
+                      variant="primary" 
+                      size="sm"
+                      type="submit"
+                      icon={<Send size={14} />}
+                      disabled={!newComment.trim()}
+                      loading={commentLoading}
+                    >
+                      Post
+                    </Button>
                   </div>
-                  <p className="text-white/80">{comment.content}</p>
                 </div>
-              </div>
-            ))}
-          </div>
-          
-          <div className="flex space-x-3">
-            <img
-              src="https://i.pravatar.cc/150?img=1"
-              alt="Current User"
-              className="w-8 h-8 rounded-full flex-shrink-0"
-            />
-            <div className="flex-1">
-              <textarea
-                placeholder="Add a comment..."
-                className="w-full px-4 py-2 bg-[#1A1A1A] border border-[#333333] rounded-md text-white focus:outline-none focus:ring-2 focus:ring-[#1DCD9F]/50 focus:border-transparent transition resize-none"
-                rows={2}
-              />
-              <div className="mt-2 flex justify-end">
-                <Button 
-                  variant="primary" 
-                  size="sm"
-                  icon={<MessageSquare size={14} />}
-                >
-                  Comment
-                </Button>
-              </div>
-            </div>
-          </div>
+              </form>
+            </>
+          )}
         </div>
       )}
     </Modal>

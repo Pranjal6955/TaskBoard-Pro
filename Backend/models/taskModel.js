@@ -18,7 +18,13 @@ const taskSchema = new mongoose.Schema({
   status: {
     type: String,
     required: true,
-    default: 'To Do'
+    default: 'To Do',
+    enum: ['To Do', 'In Progress', 'Done']
+  },
+  priority: {
+    type: String,
+    enum: ['low', 'medium', 'high'],
+    default: 'medium'
   },
   assignee: {
     userId: {
@@ -27,8 +33,19 @@ const taskSchema = new mongoose.Schema({
     },
     email: {
       type: String
+    },
+    name: {
+      type: String
+    },
+    avatar: {
+      type: String
     }
   },
+  labels: [{
+    type: String,
+    trim: true,
+    enum: ['design', 'development', 'marketing', 'research', 'testing', 'planning', 'ui/ux', 'backend', 'frontend']
+  }],
   dueDate: {
     type: Date
   },
