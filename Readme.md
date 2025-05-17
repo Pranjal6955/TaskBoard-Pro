@@ -1,35 +1,73 @@
-# Taskboard Pro
+# TaskBoard Pro
 
 A modern project management and collaboration platform designed to help teams organize, track, and manage their tasks efficiently with real-time updates and workflow automation.
 
-![image](https://github.com/user-attachments/assets/ae051b0b-d2f6-4366-ba0f-8ee84dbbd8bc)
-
+![Screenshot from 2025-05-17 22-25-10](https://github.com/user-attachments/assets/48911fe3-e9d7-43a3-97ba-5fe7fcab779b)
 
 ---
 
 ## Table of Contents
 
 - [Introduction](#introduction)
+- [Key Screenshots](#key-screenshots)
 - [Features](#features)
+- [Technology Stack](#technology-stack)
 - [API Documentation](#api-documentation)
 - [Database Schema](#database-schema)
-- [Database Diagram](#database-schema-diagram)
 - [System Architecture](#system-architecture)
 - [Getting Started](#getting-started)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
 ## Introduction
 
-Taskboard Pro is a full-stack task management application built with **React**, **Node.js**, **Express**, and **MongoDB**.  
-It enables teams to collaborate on projects, manage tasks using a Kanban-style board, communicate via comments, and automate repetitive workflows.
+TaskBoard Pro is a full-stack task management application built with **React**, **Node.js**, **Express**, and **MongoDB**. It enables teams to collaborate on projects, manage tasks using a Kanban-style board, communicate via comments, and automate repetitive workflows.
 
 The application offers:
 
-- A responsive UI for all devices
+- A responsive UI optimized for all devices
 - Real-time updates via WebSockets
 - Customizable workflows and automation rules
 - Detailed analytics to track project progress
+- Dark mode UI for reduced eye strain
+
+---
+
+## Key Screenshots
+
+### Home Page
+![Screenshot from 2025-05-17 22-25-10](https://github.com/user-attachments/assets/48911fe3-e9d7-43a3-97ba-5fe7fcab779b)
+*The landing page showcases TaskBoard Pro's modern interface and key features.*
+
+
+### Login Page
+![Screenshot from 2025-05-17 22-25-29](https://github.com/user-attachments/assets/b2a18b0b-c14e-4689-a21d-f94f32e8217f)
+*The login page allows users to securely access their accounts with email and password authentication.*
+
+### Dashboard
+![Screenshot from 2025-05-17 22-26-01](https://github.com/user-attachments/assets/960c8ed2-afd5-499b-bf3c-a62d14e535e0)
+![Screenshot from 2025-05-17 22-25-54](https://github.com/user-attachments/assets/6312a1e7-a6ec-4715-857c-0234eb8eaddc)
+*The dashboard provides an overview of all projects with progress indicators.*
+
+### Project Kanban Board
+![Screenshot from 2025-05-17 22-26-20](https://github.com/user-attachments/assets/4041038b-b9e0-4b94-b734-1dcd13e5c622)
+*The intuitive drag-and-drop interface for managing tasks across different statuses.*
+
+### Task Details View
+![Screenshot from 2025-05-17 22-33-04](https://github.com/user-attachments/assets/6fd1253d-20b4-4b02-9055-e405d4c90735)
+*Comprehensive task information with comments, labels, and assignment options.*
+
+
+### Invite Member
+![Screenshot from 2025-05-17 22-27-01](https://github.com/user-attachments/assets/ed39fddd-e6ae-49db-af37-5f4721351936)
+*Easy-to-use interface for inviting team members to collaborate on projects with role assignment options.*
+
+
+### Automation Rules Page
+![Screenshot from 2025-05-17 22-26-48](https://github.com/user-attachments/assets/eb0261da-658c-4707-ab00-3fcd410aa2b1)
+*Set up custom workflows to automate repetitive tasks and notifications.*
 
 ---
 
@@ -40,6 +78,7 @@ The application offers:
 - **Project Creation & Organization:** Create new projects, add descriptions, and organize work.
 - **Customizable Statuses:** Define your own workflow stages (To Do, In Progress, Review, Done, etc.).
 - **Team Collaboration:** Invite team members and assign roles (owner, member).
+- **Progress Tracking:** Visual indicators of project completion and task distribution.
 
 ### Task Management
 
@@ -47,26 +86,47 @@ The application offers:
 - **Task Details:** Title, description, assignee, due date, priority, urgency.
 - **Comments & Discussions:** Threaded comments on tasks.
 - **Task Assignments:** Assign tasks with email notifications.
+- **Labels & Filtering:** Categorize tasks and filter by multiple criteria.
 
 ### User Experience
 
 - **Real-time Updates:** Instant changes via WebSocket integration.
 - **Responsive Design:** Works on desktop, tablet, and mobile.
 - **Notifications:** In-app for assignments, mentions, and status changes.
-- **Dark Mode Support:** Adapts to system preferences.
+- **Dark Mode Support:** Reduces eye strain during extended use.
+- **Intuitive Navigation:** Streamlined UI for maximum productivity.
 
 ### Workflow Automation
 
 - **Custom Automation Rules:** "If this, then that" style automations.
 - **Triggers:** Status change, assignment change, due date passed.
 - **Actions:** Move tasks, assign badges, send notifications.
-- **Achievement Badges:** Gamification elements.
+- **Achievement Badges:** Gamification elements to boost engagement.
+- **Scheduled Automations:** Set time-based rules for recurring tasks.
 
 ### Security & Access Control
 
 - **Authentication:** Secure user authentication with Firebase.
 - **Role-Based Access:** Different permissions for owners/members.
 - **Data Protection:** Encrypted storage and secure API endpoints.
+- **Activity Logs:** Track all changes for accountability.
+
+---
+
+## Technology Stack
+
+- **Frontend:**
+  - React with Vite for fast development
+  - Framer Motion for smooth animations
+  - Tailwind CSS for styling
+  - Lucide React for icons
+  - Firebase Authentication
+
+- **Backend:**
+  - Node.js and Express
+  - MongoDB with Mongoose
+  - Socket.IO for real-time updates
+  - JWT for API authentication
 
 ---
 
@@ -256,34 +316,6 @@ Authorization: Bearer <your-jwt-token>
 
 ---
 
-## Database Schema Diagram
-
-```
-┌─────────────┐       ┌─────────────┐
-│  Project    │       │   Task      │
-├─────────────┤       ├─────────────┤
-│ _id         │<──────│ projectId   │
-│ members[]   │       │ assignee    │
-│ statuses[]  │       │ ...         │
-└─────┬───────┘       └─────┬───────┘
-      │                     │
-      ▼                     ▼
-┌─────────────┐       ┌─────────────┐
-│ Automation  │<──────│ Comment     │
-├─────────────┤       ├─────────────┤
-│ projectId   │       │ projectId   │
-│ action      │       │ taskId      │
-│ ...         │       │ ...         │
-└─────┬───────┘       └─────┬───────┘
-      │                     │
-      ▼                     ▼
-┌─────────────┐       ┌─────────────┐
-│   Badge     │<──────│ Notification│
-└─────────────┘       └─────────────┘
-```
-
----
-
 ## System Architecture
 
 ```
@@ -316,8 +348,8 @@ Authorization: Bearer <your-jwt-token>
 
 1. **Clone the repository**
     ```bash
-    git clone https://github.com/Va16hav07/Taskboard-pro.git
-    cd Taskboard-pro
+    git clone https://github.com/yourusername/taskboard-pro.git
+    cd taskboard-pro
     ```
 
 2. **Install dependencies for backend and frontend**
@@ -369,5 +401,24 @@ Authorization: Bearer <your-jwt-token>
     npm run dev
     ```
 
-Frontend: http://localhost:5173  
-Backend API: http://localhost:5000
+6. **Access the application**
+    - Frontend: http://localhost:5173  
+    - Backend API: http://localhost:5000
+
+---
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
