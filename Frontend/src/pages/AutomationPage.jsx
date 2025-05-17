@@ -6,14 +6,16 @@ import ProjectHeader from '../components/project/ProjectHeader';
 import RuleCreationForm from '../components/automation/RuleCreationForm';
 import RulePreview from '../components/automation/RulePreview';
 import { getProjectById } from '../services/projectService';
-import { getProjectAutomations, createAutomation, deleteAutomation } from '../services/automationService';
+import { getProjectAutomations, createAutomation, deleteAutomation, updateAutomation } from '../services/automationService';
 import { AlertCircle, Loader, Zap } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const AutomationPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [project, setProject] = useState(null);
-  const [rules, setRules] = useState([]);
+  const [automations, setAutomations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   
@@ -28,7 +30,7 @@ const AutomationPage = () => {
         
         // Fetch automation rules
         const automationData = await getProjectAutomations(id);
-        setRules(automationData);
+        setAutomations(automationData);
         
         setError(null);
       } catch (err) {
@@ -49,11 +51,12 @@ const AutomationPage = () => {
   const handleCreateRule = async (ruleData) => {
     try {
       setIsLoading(true);
-      const newRule = await createAutomation({
+      const newAutomation = await createAutomation({
         ...ruleData,
-        projectId: id
+        projectId: id,
+        createdBy: user.id
       });
-      setRules(prev => [newRule, ...prev]);
+      setAutomations(prev => [newAutomation, ...prev]);
       setError(null);
     } catch (err) {
       console.error('Error creating automation rule:', err);
@@ -63,15 +66,31 @@ const AutomationPage = () => {
     }
   };
   
-  const handleDeleteRule = async (ruleId) => {
+  const handleDeleteRule = async (automationId) => {
     try {
       setIsLoading(true);
-      await deleteAutomation(ruleId);
-      setRules(prev => prev.filter(rule => rule._id !== ruleId));
+      await deleteAutomation(automationId);
+      setAutomations(prev => prev.filter(automation => automation._id !== automationId));
       setError(null);
     } catch (err) {
       console.error('Error deleting automation rule:', err);
       setError('Failed to delete automation rule. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  const handleToggleRuleActive = async (automationId, isCurrentlyActive) => {
+    try {
+      setIsLoading(true);
+      const updatedRule = await updateAutomation(automationId, { isActive: !isCurrentlyActive });
+      setAutomations(prev => prev.map(rule => 
+        rule._id === automationId ? updatedRule : rule
+      ));
+      setError(null);
+    } catch (err) {
+      console.error('Error updating automation rule:', err);
+      setError('Failed to update automation rule. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -153,7 +172,7 @@ const AutomationPage = () => {
             <h3 className="text-xl font-medium mb-4">Active Rules</h3>
             
             <AnimatePresence>
-              {rules.length === 0 ? (
+              {automations.length === 0 ? (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -167,11 +186,12 @@ const AutomationPage = () => {
                   </p>
                 </motion.div>
               ) : (
-                rules.map(rule => (
+                automations.map(automation => (
                   <RulePreview 
-                    key={rule._id || rule.id} 
-                    rule={rule} 
-                    onDeleteRule={handleDeleteRule} 
+                    key={automation._id} 
+                    rule={automation} 
+                    onDeleteRule={handleDeleteRule}
+                    onToggleActive={() => handleToggleRuleActive(automation._id, automation.isActive)} 
                   />
                 ))
               )}

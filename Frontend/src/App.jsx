@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { auth } from './firebase/config';
 import { registerUserAfterGoogleLogin } from './services/userService';
+import { AuthProvider } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import ProjectPage from './pages/ProjectPage';
@@ -39,35 +40,35 @@ const AuthRoute = ({ children }) => {
 
 function App() {
   return (
-    <Router>
-      <Routes>
-        {/* Public routes */}
-        <Route path="/" element={<HomePage />} />
-        <Route path="/login" element={<LoginPage />} />
-        
-        {/* Protected routes */}
-        <Route path="/dashboard" element={
-          <AuthRoute>
-            <DashboardPage />
-          </AuthRoute>
-        } />
-        <Route path="/projects/:id" element={
-          <AuthRoute>
-            <ProjectPage />
-          </AuthRoute>
-        } />
-        <Route path="/projects/:id/automation" element={
-          <AuthRoute>
-            <AutomationPage />
-          </AuthRoute>
-        } />
-        
-        {/* Removed ProfilePage route since it doesn't exist */}
-        
-        {/* Fallback route */}
-        <Route path="*" element={<HomePage />} />
-      </Routes>
-    </Router>
+    <AuthProvider>
+      <Router>
+        <Routes>
+          {/* Public routes */}
+          <Route path="/" element={<HomePage />} />
+          <Route path="/login" element={<LoginPage />} />
+          
+          {/* Protected routes */}
+          <Route path="/dashboard" element={
+            <AuthRoute>
+              <DashboardPage />
+            </AuthRoute>
+          } />
+          <Route path="/projects/:id" element={
+            <AuthRoute>
+              <ProjectPage />
+            </AuthRoute>
+          } />
+          <Route path="/projects/:id/automation" element={
+            <AuthRoute>
+              <AutomationPage />
+            </AuthRoute>
+          } />
+          
+          {/* Fallback route */}
+          <Route path="*" element={<HomePage />} />
+        </Routes>
+      </Router>
+    </AuthProvider>
   );
 }
 
